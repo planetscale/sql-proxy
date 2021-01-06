@@ -31,22 +31,18 @@ func realMain() error {
 
 	fmt.Printf("*addr = %+v\n", *addr)
 
-	cfg := &mysql.Config{
-		User:                 *user,
-		Passwd:               *password,
-		Net:                  "tcp",
-		Addr:                 *addr,
-		DBName:               *dbname,
-		AllowNativePasswords: true,
-	}
+	cfg := mysql.NewConfig()
+	cfg.User = *user
+	cfg.Passwd = *password
+	cfg.Net = "tcp"
+	cfg.Addr = *addr
+	cfg.DBName = *dbname
 
 	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		return err
 	}
-
-	// check that connection is working
-	err = db.Ping()
+	err = db.Ping() // check that connection is working
 	if err != nil {
 		return err
 	}
