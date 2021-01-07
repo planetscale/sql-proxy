@@ -37,8 +37,8 @@ func realMain() error {
 	dbname := flag.String("db", "", "MySQL Database name")
 
 	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
-	clientCertPath := flag.String("key", "testcerts/client-cert.pem", "MySQL Client Cert path")
-	clientKeyPath := flag.String("cert", "testcerts/client-key.pem", "MySQL Client Key path")
+	clientCertPath := flag.String("cert", "testcerts/client-cert.pem", "MySQL Client Cert path")
+	clientKeyPath := flag.String("key", "testcerts/client-key.pem", "MySQL Client Key path")
 
 	flag.Parse()
 
@@ -47,11 +47,14 @@ func realMain() error {
 		return err
 	}
 
+	var d net.Dialer
+
 	proxyClient := &proxy.Client{
 		Port:           3306, // remote DB port
 		MaxConnections: 0,    // no limit
 		Conns:          proxy.NewConnSet(),
 		Certs:          certSource,
+		ContextDialer:  d.DialContext,
 	}
 
 	addr := "127.0.0.1"
@@ -62,8 +65,6 @@ func realMain() error {
 			log.Println("error net.Listen: %s", err)
 			return
 		}
-
-		fmt.Printf("l = %+v\n", l.Addr().String())
 
 		go func() {
 			for {
@@ -136,7 +137,7 @@ func newLocalCertSource(addr, dbname, caPath, certPath, keyPath string) (*localC
 	if err != nil {
 		return nil, err
 	}
-	cert.Leaf = caCert
+	// cert.Leaf = caCert
 
 	return &localCertSource{
 		cert:   cert,
