@@ -9,8 +9,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-
-	"github.com/GoogleCloudPlatform/cloudsql-proxy/logging"
 )
 
 func main() {
@@ -85,9 +83,9 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 		select {
 		case firstErr <- err:
 			if readErr && err == io.EOF {
-				logging.Verbosef("Client closed %v", localDesc)
+				log.Printf("client closed %v", localDesc)
 			} else {
-				copyError(localDesc, remoteDesc, readErr, err)
+				logError(localDesc, remoteDesc, readErr, err)
 			}
 			remote.Close()
 			local.Close()
@@ -99,9 +97,9 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 	select {
 	case firstErr <- err:
 		if readErr && err == io.EOF {
-			logging.Verbosef("Instance %v closed connection", remoteDesc)
+			log.Printf("instance %v closed connection", remoteDesc)
 		} else {
-			copyError(remoteDesc, localDesc, readErr, err)
+			logError(remoteDesc, localDesc, readErr, err)
 		}
 		remote.Close()
 		local.Close()
@@ -132,12 +130,12 @@ func myCopy(dst io.Writer, src io.Reader) (readErr bool, err error) {
 	}
 }
 
-func copyError(readDesc, writeDesc string, readErr bool, err error) {
+func logError(readDesc, writeDesc string, readErr bool, err error) {
 	var desc string
 	if readErr {
-		desc = "Reading data from " + readDesc
+		desc = "reading data from " + readDesc
 	} else {
-		desc = "Writing data to " + writeDesc
+		desc = "writing data to " + writeDesc
 	}
 	log.Printf("%v had error: %v", desc, err)
 }
