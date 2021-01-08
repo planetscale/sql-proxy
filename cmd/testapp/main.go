@@ -30,8 +30,8 @@ func realMain() error {
 	dbname := flag.String("db", "", "MySQL Database name")
 
 	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
-	clientCertPath := flag.String("key", "testcerts/client-cert.pem", "MySQL Client Cert path")
-	clientKeyPath := flag.String("cert", "testcerts/client-key.pem", "MySQL Client Key path")
+	clientCertPath := flag.String("cert", "testcerts/client-cert.pem", "MySQL Client Cert path")
+	clientKeyPath := flag.String("key", "testcerts/client-key.pem", "MySQL Client Key path")
 
 	flag.Parse()
 
@@ -51,16 +51,10 @@ func realMain() error {
 	}
 
 	if err := mysql.RegisterTLSConfig("custom", &tls.Config{
-		RootCAs:            rootCertPool,
-		Certificates:       []tls.Certificate{certs},
-		InsecureSkipVerify: true, // TODO(fatih): make sure if we can disable this
-		VerifyConnection: func(st tls.ConnectionState) error {
-			for _, p := range st.PeerCertificates {
-				fmt.Printf("p.Issuer = %+v\n", p.Issuer)
-				fmt.Printf("p.Subject = %+v\n", p.Subject)
-			}
-			return nil
-		},
+		RootCAs:               rootCertPool,
+		Certificates:          []tls.Certificate{certs},
+		InsecureSkipVerify:    true, // TODO(fatih): make sure if we can disable this
+		VerifyPeerCertificate: genVerifyPeerCertificateFunc("MySQL_Server_5.7.32_Auto_Generated_Server_Certificate", rootCertPool),
 	}); err != nil {
 		return err
 	}
@@ -103,4 +97,31 @@ func realMain() error {
 	}
 
 	return nil
+}
+
+// genVerifyPeerCertificateFunc creates a VerifyPeerCertificate func that verifies that the peer
+// certificate is in the cert pool. We need to define our own because of our sketchy non-standard
+// CNs.
+func genVerifyPeerCertificateFunc(instanceName string, pool *x509.CertPool) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("no certificate to verify")
+		}
+
+		cert, err := x509.ParseCertificate(rawCerts[0])
+		if err != nil {
+			return fmt.Errorf("x509.ParseCertificate(rawCerts[0]) returned error: %v", err)
+		}
+
+		opts := x509.VerifyOptions{Roots: pool}
+		if _, err = cert.Verify(opts); err != nil {
+			return err
+		}
+
+		fmt.Printf("cert.Subject.CommonName = %+v\n", cert.Subject.CommonName)
+		if cert.Subject.CommonName != instanceName {
+			return fmt.Errorf("certificate had CN %q, expected %q", cert.Subject.CommonName, instanceName)
+		}
+		return nil
+	}
 }

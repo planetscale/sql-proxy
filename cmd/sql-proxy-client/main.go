@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -18,11 +17,6 @@ import (
 	"github.com/GoogleCloudPlatform/cloudsql-proxy/logging"
 	"github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/proxy"
 )
-
-type City struct {
-	ID   int
-	Name string
-}
 
 func main() {
 	if err := realMain(); err != nil {
@@ -50,17 +44,17 @@ func realMain() error {
 	var d net.Dialer
 
 	proxyClient := &proxy.Client{
-		Port:           3306, // remote DB port
+		Port:           3308, // remote DB port
 		MaxConnections: 0,    // no limit
 		Conns:          proxy.NewConnSet(),
 		Certs:          certSource,
 		ContextDialer:  d.DialContext,
 	}
 
-	addr := "127.0.0.1"
+	addr := "127.0.0.1:3307"
 	connSrc := make(chan proxy.Conn, 1)
 	go func() {
-		l, err := net.Listen("tcp", addr+":3307")
+		l, err := net.Listen("tcp", addr)
 		if err != nil {
 			log.Println("error net.Listen: %s", err)
 			return
@@ -137,12 +131,12 @@ func newLocalCertSource(addr, dbname, caPath, certPath, keyPath string) (*localC
 	if err != nil {
 		return nil, err
 	}
-	// cert.Leaf = caCert
+	cert.Leaf = caCert
 
 	return &localCertSource{
 		cert:   cert,
 		caCert: caCert,
-		name:   dbname,
+		name:   "MySQL_Server_5.7.32_Auto_Generated_Server_Certificate",
 		addr:   addr,
 	}, nil
 
@@ -157,12 +151,10 @@ type localCertSource struct {
 }
 
 func (c *localCertSource) Local(instance string) (tls.Certificate, error) {
-	fmt.Println("local is called for instance:", instance)
 	return c.cert, nil
 }
 
 func (c *localCertSource) Remote(instance string) (cert *x509.Certificate, addr, name, version string, err error) {
-	fmt.Println("remote is called for instance:", instance)
 	return c.caCert, c.addr, c.name, "", nil
 }
 
