@@ -122,8 +122,8 @@ func (c *Client) listen(connSrc chan<- Conn) error {
 
 		switch clientConn := conn.(type) {
 		case *net.TCPConn:
-			clientConn.SetKeepAlive(true)
-			clientConn.SetKeepAlivePeriod(1 * time.Minute)
+			clientConn.SetKeepAlive(true)                  //nolint: errcheck
+			clientConn.SetKeepAlivePeriod(1 * time.Minute) //nolint: errcheck
 		}
 
 		connSrc <- Conn{
