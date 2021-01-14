@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	ps "github.com/planetscale/planetscale-go"
 	"github.com/planetscale/sql-proxy/proxy"
 )
 
@@ -23,26 +27,49 @@ func main() {
 }
 
 func realMain() error {
-	localAddr := flag.String("local-addr", "127.0.0.1:3307", "Local address to bind and listen for connections")
-	remoteAddr := flag.String("remote-addr", "127.0.0.1:3308", "MySQL remote network address")
-	dbname := flag.String("db", "testdb", "MySQL Database name")
+	localAddr := flag.String("local-addr", "127.0.0.1:3307",
+		"Local address to bind and listen for connections")
+	remoteAddr := flag.String("remote-addr", "127.0.0.1:3308",
+		"MySQL remote network address")
+	instance := flag.String("instance", "",
+		"The PlanetScale Database instance in the form of organization/database/branch")
+	token := flag.String("token", "", "The PlanetScale API token")
 
 	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
 	clientCertPath := flag.String("cert", "testcerts/client-cert.pem", "MySQL Client Cert path")
 	clientKeyPath := flag.String("key", "testcerts/client-key.pem", "MySQL Client Key path")
 
+	if *token == "" {
+		return errors.New("--token is not set. Please provide a PlanetScale API token")
+	}
+
+	if *instance == "" {
+		return errors.New("--instance is not set. Please provide the PlanetScale DB instance in the form of organization/database/branch")
+	}
+
 	flag.Parse()
 
-	certSource, err := newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath)
+	var certSource proxy.CertSource
+	var err error
+
+	certSource, err = newRemoteCertSource(*token)
 	if err != nil {
 		return err
+	}
+
+	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
+		fmt.Println("local certs are defined, disabling remote cert source and using local certificates")
+		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	p := &proxy.Client{
 		CertSource: certSource,
 		LocalAddr:  *localAddr,
 		RemoteAddr: *remoteAddr,
-		Instance:   *dbname,
+		Instance:   *instance,
 	}
 
 	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
@@ -51,6 +78,45 @@ func realMain() error {
 
 	log.Println("ready for new connections")
 	return p.Run(ctx)
+}
+
+type remoteCertSource struct {
+	client *ps.Client
+}
+
+func newRemoteCertSource(token string) (*remoteCertSource, error) {
+	client, err := ps.NewClient(
+		ps.WithAccessToken(token),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &remoteCertSource{
+		client: client,
+	}, nil
+}
+
+func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
+	pkey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't generate private key: %s", err)
+	}
+
+	cert, err := r.client.Certificates.Create(ctx, &ps.CreateCertificateRequest{
+		Organization: org,
+		DatabaseName: db,
+		Branch:       branch,
+		PrivateKey:   pkey,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &proxy.Cert{
+		ClientCert: cert.ClientCert,
+		CACert:     cert.CACert,
+	}, nil
 }
 
 func newLocalCertSource(caPath, certPath, keyPath string) (*localCertSource, error) {
@@ -82,7 +148,7 @@ type localCertSource struct {
 	caCert *x509.Certificate
 }
 
-func (c *localCertSource) Cert(ctx context.Context, db, branch string) (*proxy.Cert, error) {
+func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
 	return &proxy.Cert{
 		ClientCert: c.cert,
 		CACert:     c.caCert,
