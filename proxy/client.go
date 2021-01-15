@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -27,12 +28,12 @@ type Cert struct {
 type CertSource interface {
 	// Cert returns the required certs needed to establish a TLS connection
 	// from the client to the server.
-	Cert(ctx context.Context, db, branch string) (*Cert, error)
+	Cert(ctx context.Context, org, db, branch string) (*Cert, error)
 }
 
 // Client is responsible for listening to unsecured connections over a TCP
 // localhost port and tunneling them securely over a TLS connection to a remote
-// database instance.
+// database instance defined by its PlanetScale unique branch identifier.
 type Client struct {
 	// RemoteAddr defines the address to tunnel local connections
 	RemoteAddr string
@@ -128,7 +129,7 @@ func (c *Client) listen(connSrc chan<- Conn) error {
 
 		connSrc <- Conn{
 			Conn:     conn,
-			Instance: c.Instance, // TODO(fatih): fix this
+			Instance: c.Instance,
 		}
 	}
 }
@@ -145,7 +146,13 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 	}
 
 	// TODO(fatih): cache certs
-	cert, err := c.CertSource.Cert(ctx, instance, "branch")
+
+	s := strings.Split(instance, "/")
+	if len(s) != 3 {
+		return fmt.Errorf("instance format is malformed, should be in form organization/dbname/branch, have: %q", instance)
+	}
+
+	cert, err := c.CertSource.Cert(ctx, s[0], s[1], s[2])
 	if err != nil {
 		return fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
 	}
