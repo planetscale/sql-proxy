@@ -35,10 +35,11 @@ func realMain() error {
 		"The PlanetScale Database instance in the form of organization/database/branch")
 	token := flag.String("token", "", "The PlanetScale API token")
 
-	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
-	clientCertPath := flag.String("cert", "testcerts/client-cert.pem", "MySQL Client Cert path")
-	clientKeyPath := flag.String("key", "testcerts/client-key.pem", "MySQL Client Key path")
+	caPath := flag.String("ca", "", "MySQL CA Cert path")
+	clientCertPath := flag.String("cert", "", "MySQL Client Cert path")
+	clientKeyPath := flag.String("key", "", "MySQL Client Key path")
 
+	flag.Parse()
 	if *token == "" {
 		return errors.New("--token is not set. Please provide a PlanetScale API token")
 	}
@@ -46,8 +47,6 @@ func realMain() error {
 	if *instance == "" {
 		return errors.New("--instance is not set. Please provide the PlanetScale DB instance in the form of organization/database/branch")
 	}
-
-	flag.Parse()
 
 	var certSource proxy.CertSource
 	var err error
@@ -58,7 +57,7 @@ func realMain() error {
 	}
 
 	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		fmt.Println("local certs are defined, disabling remote cert source and using local certificates")
+		log.Println("local certs are defined, disabling remote cert source and using local certificates")
 		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath)
 		if err != nil {
 			return err

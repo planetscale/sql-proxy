@@ -22,6 +22,9 @@ func realMain() error {
 	serverCertPath := flag.String("cert", "testcerts/server-cert.pem", "MySQL server Cert path")
 	serverKeyPath := flag.String("key", "testcerts/server-key.pem", "MySQL server Key path")
 
+	backendAddr := flag.String("backend-addr", "127.0.0.1:3306",
+		"MySQL backend network address")
+
 	flag.Parse()
 
 	caBuf, err := ioutil.ReadFile(*caPath)
@@ -38,7 +41,6 @@ func realMain() error {
 	}
 
 	localAddr := "127.0.0.1:3308"
-	backendAddr := "127.0.0.1:3306"
 
 	log.Printf("listening on %s", localAddr)
 
@@ -52,9 +54,6 @@ func realMain() error {
 		MinVersion:               tls.VersionTLS12,
 		ClientCAs:                caPool,
 		Certificates:             []tls.Certificate{certs},
-		// GetClientCertificate: func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-
-		// },
 	}
 
 	for {
@@ -64,14 +63,14 @@ func realMain() error {
 		}
 		tlsConn := tls.Server(c, cfg)
 
-		log.Printf("new connection for %q", backendAddr)
+		log.Printf("new connection for %q", *backendAddr)
 
-		backendConn, err := net.Dial("tcp", backendAddr) // mysql instance
+		backendConn, err := net.Dial("tcp", *backendAddr) // mysql instance
 		if err != nil {
 			return fmt.Errorf("couldn't connect to backend: %s", err)
 		}
 
-		copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+backendAddr)
+		copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+*backendAddr)
 	}
 }
 
