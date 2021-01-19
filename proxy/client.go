@@ -181,7 +181,7 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 
 	cfg, err := c.clientCerts(ctx, instance)
 	if err != nil {
-		return fmt.Errorf("couldn't retrieve certs for instance: %q: %w", err)
+		return fmt.Errorf("couldn't retrieve certs for instance: %q: %w", instance, err)
 	}
 
 	// TODO(fatih): implement refreshing certs
