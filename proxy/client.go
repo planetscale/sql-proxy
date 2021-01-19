@@ -146,7 +146,6 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 	}
 
 	// TODO(fatih): cache certs
-
 	s := strings.Split(instance, "/")
 	if len(s) != 3 {
 		return fmt.Errorf("instance format is malformed, should be in form organization/dbname/branch, have: %q", instance)
@@ -160,7 +159,8 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 	rootCA := x509.NewCertPool()
 	rootCA.AddCert(cert.CACert)
 
-	serverName := "MySQL_Server_5.7.32_Auto_Generated_Server_Certificate"
+	// TODO(fatih): replace server name with the FQDN or define VerifyPeerCertificate
+	serverName := "*.elb.amazonaws.com"
 	cfg := &tls.Config{
 		ServerName:   serverName,
 		Certificates: []tls.Certificate{cert.ClientCert},
@@ -172,8 +172,8 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 		// Since we have a secure channel to the Cloud SQL API which we use to retrieve the
 		// certificates, we instead need to implement our own VerifyPeerCertificate function
 		// that will verify that the certificate is OK.
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
+		// InsecureSkipVerify:    true,
+		// VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
 	}
 
 	// TODO(fatih): implement refreshing certs
@@ -246,6 +246,8 @@ func (c *Client) Shutdown(timeout time.Duration) error {
 // genVerifyPeerCertificateFunc creates a VerifyPeerCertificate func that verifies that the peer
 // certificate is in the cert pool. We need to define our own because of our sketchy non-standard
 // CNs.
+// TODO(fatih): we might want to use it, hence keep it here
+// nolint: deadcode,unused
 func genVerifyPeerCertificateFunc(instanceName string, pool *x509.CertPool) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
