@@ -246,6 +246,8 @@ func (c *Client) Shutdown(timeout time.Duration) error {
 // genVerifyPeerCertificateFunc creates a VerifyPeerCertificate func that verifies that the peer
 // certificate is in the cert pool. We need to define our own because of our sketchy non-standard
 // CNs.
+// TODO(fatih): we might want to use it, hence keep it here
+// nolint: deadcode,unused
 func genVerifyPeerCertificateFunc(instanceName string, pool *x509.CertPool) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 		if len(rawCerts) == 0 {
