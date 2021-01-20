@@ -26,7 +26,7 @@ func TestClient_Run_Cancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	done := make(chan bool, 0)
+	done := make(chan bool)
 	go func() {
 		err := client.Run(ctx)
 		c.Assert(err, qt.IsNil)
@@ -133,7 +133,7 @@ func TestClient_run(t *testing.T) {
 	})
 
 	// run the proxy
-	done := make(chan bool, 0)
+	done := make(chan bool)
 	go func() {
 		err := client.run(ctx, localListener)
 		c.Assert(err, qt.IsNil)
