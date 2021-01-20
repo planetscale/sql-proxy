@@ -131,7 +131,7 @@ func TestClient_run(t *testing.T) {
 		CertSource: certSource,
 	})
 
-	// run the proxy
+	// run the client proxy
 	done := make(chan bool)
 	go func() {
 		err := client.run(ctx, localListener)
@@ -151,7 +151,7 @@ func TestClient_run(t *testing.T) {
 		_, err = tlsConn.Read(buf[:])
 		c.Assert(err, qt.IsNil)
 
-		// we should read the message the client sent us
+		// we should read the same message the client sent us
 		c.Assert(string(buf), qt.Equals, msg)
 
 		// bail out
