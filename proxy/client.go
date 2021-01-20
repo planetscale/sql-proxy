@@ -99,9 +99,20 @@ type Conn struct {
 // Run runs the proxy. It listens to the configured localhost address and
 // proxies the connection over a TLS tunnel to the remote DB instance.
 func (c *Client) Run(ctx context.Context) error {
+	l, err := net.Listen("tcp", c.localAddr)
+	if err != nil {
+		return fmt.Errorf("error net.Listen: %s", err)
+	}
+
+	return c.run(ctx, l)
+}
+
+// run is an internal function for testing the Client proxy event loop for
+// handling TCP connections
+func (c *Client) run(ctx context.Context, l net.Listener) error {
 	connSrc := make(chan Conn, 1)
 	go func() {
-		if err := c.listen(connSrc); err != nil {
+		if err := c.listen(l, connSrc); err != nil {
 			log.Printf("listen error: %s", err)
 		}
 	}()
@@ -129,12 +140,9 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
-func (c *Client) listen(connSrc chan<- Conn) error {
-	l, err := net.Listen("tcp", c.localAddr)
-	if err != nil {
-		return fmt.Errorf("error net.Listen: %s", err)
-	}
-
+// listen listens to the client's localAddres and sends each incoming
+// connections to the given connSrc channel.
+func (c *Client) listen(l net.Listener, connSrc chan<- Conn) error {
 	log.Printf("listening on %q for remote DB instance %q", c.localAddr, c.instance)
 
 	for {
@@ -153,7 +161,7 @@ func (c *Client) listen(connSrc chan<- Conn) error {
 			return fmt.Errorf("error in accept for on %v: %v", c.localAddr, err)
 		}
 
-		log.Printf("new connection for %q", c.localAddr)
+		log.Printf("new connection for %q", l.Addr().String())
 
 		switch clientConn := conn.(type) {
 		case *net.TCPConn:
@@ -252,7 +260,7 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 	rootCA.AddCert(cert.CACert)
 
 	// TODO(fatih): replace server name with the FQDN or define VerifyPeerCertificate
-	serverName := "*.elb.amazonaws.com"
+	serverName := "localhost"
 	cfg = &tls.Config{
 		ServerName:   serverName,
 		Certificates: []tls.Certificate{cert.ClientCert},
@@ -264,8 +272,8 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 		// Since we have a secure channel to the Cloud SQL API which we use to retrieve the
 		// certificates, we instead need to implement our own VerifyPeerCertificate function
 		// that will verify that the certificate is OK.
-		// InsecureSkipVerify:    true,
-		// VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
 	}
 
 	log.Println("adding tls.Config to the cache")
