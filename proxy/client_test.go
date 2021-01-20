@@ -101,8 +101,7 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 
 func TestClient_run(t *testing.T) {
 	c := qt.New(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	c.Cleanup(func() { cancel() })
+	ctx := context.Background()
 
 	org, db, branch := "myorg", "mydb", "mybranch"
 	instance := fmt.Sprintf("%s/%s/%s", org, db, branch)
@@ -137,7 +136,6 @@ func TestClient_run(t *testing.T) {
 	go func() {
 		err := client.run(ctx, localListener)
 		c.Assert(err, qt.IsNil)
-		close(done)
 	}()
 
 	msg := "Don't Try To Understand It. Feel It."
@@ -155,6 +153,9 @@ func TestClient_run(t *testing.T) {
 
 		// we should read the message the client sent us
 		c.Assert(string(buf), qt.Equals, msg)
+
+		// bail out
+		close(done)
 	}()
 
 	// open a TCP connection to our proxy
@@ -165,8 +166,7 @@ func TestClient_run(t *testing.T) {
 	_, err = conn.Write([]byte(msg))
 	c.Assert(err, qt.IsNil)
 
-	// bail out
-	cancel()
+	// wait until we have read the message on the remote listener
 	<-done
 }
 
