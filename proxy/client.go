@@ -35,6 +35,22 @@ type CertSource interface {
 // localhost port and tunneling them securely over a TLS connection to a remote
 // database instance defined by its PlanetScale unique branch identifier.
 type Client struct {
+	remoteAddr     string
+	localAddr      string
+	instance       string
+	maxConnections uint64
+	certSource     CertSource
+
+	// connectionsCounter is used to enforce the optional maxConnections limit
+	connectionsCounter uint64
+
+	// configCache contains the TLS certificate chache for each indiviual
+	// database
+	configCache *tlsCache
+}
+
+// Options are the options for creating a new Client.
+type Options struct {
 	// RemoteAddr defines the address to tunnel local connections
 	RemoteAddr string
 
@@ -51,9 +67,27 @@ type Client struct {
 	// CertSource defines the certificate source to obtain the required TLS
 	// certificates for the client.
 	CertSource CertSource
+}
 
-	// connectionsCounter is used to enforce the optional maxConnections limit
-	connectionsCounter uint64
+// NewClient creates a new proxy client instance
+func NewClient(opts Options) *Client {
+	c := &Client{
+		certSource:  opts.CertSource,
+		localAddr:   opts.LocalAddr,
+		remoteAddr:  opts.RemoteAddr,
+		instance:    opts.Instance,
+		configCache: newtlsCache(),
+	}
+
+	// cache the certs for the given instance(s)
+	go func() {
+		_, err := c.clientCerts(context.Background(), opts.Instance)
+		if err != nil {
+			log.Println("couldn't retrieve TLS certificate for the client")
+		}
+	}()
+
+	return c
 }
 
 // Conn represents a connection from a client to a specific instance.
@@ -96,12 +130,12 @@ func (c *Client) Run(ctx context.Context) error {
 }
 
 func (c *Client) listen(connSrc chan<- Conn) error {
-	l, err := net.Listen("tcp", c.LocalAddr)
+	l, err := net.Listen("tcp", c.localAddr)
 	if err != nil {
 		return fmt.Errorf("error net.Listen: %s", err)
 	}
 
-	log.Printf("listening on %q for remote DB instance %q", c.LocalAddr, c.Instance)
+	log.Printf("listening on %q for remote DB instance %q", c.localAddr, c.instance)
 
 	for {
 		start := time.Now()
@@ -116,10 +150,10 @@ func (c *Client) listen(connSrc chan<- Conn) error {
 			}
 			l.Close()
 
-			return fmt.Errorf("error in accept for on %v: %v", c.LocalAddr, err)
+			return fmt.Errorf("error in accept for on %v: %v", c.localAddr, err)
 		}
 
-		log.Printf("new connection for %q", c.LocalAddr)
+		log.Printf("new connection for %q", c.localAddr)
 
 		switch clientConn := conn.(type) {
 		case *net.TCPConn:
@@ -129,7 +163,7 @@ func (c *Client) listen(connSrc chan<- Conn) error {
 
 		connSrc <- Conn{
 			Conn:     conn,
-			Instance: c.Instance,
+			Instance: c.instance,
 		}
 	}
 }
@@ -140,50 +174,24 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 	// Deferred decrement of ConnectionsCounter upon connection closing
 	defer atomic.AddUint64(&c.connectionsCounter, ^uint64(0))
 
-	if c.MaxConnections > 0 && active > c.MaxConnections {
+	if c.maxConnections > 0 && active > c.maxConnections {
 		conn.Close()
-		return fmt.Errorf("too many open connections (max %d)", c.MaxConnections)
+		return fmt.Errorf("too many open connections (max %d)", c.maxConnections)
 	}
 
-	// TODO(fatih): cache certs
-	s := strings.Split(instance, "/")
-	if len(s) != 3 {
-		return fmt.Errorf("instance format is malformed, should be in form organization/dbname/branch, have: %q", instance)
-	}
-
-	cert, err := c.CertSource.Cert(ctx, s[0], s[1], s[2])
+	cfg, err := c.clientCerts(ctx, instance)
 	if err != nil {
-		return fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
-	}
-
-	rootCA := x509.NewCertPool()
-	rootCA.AddCert(cert.CACert)
-
-	// TODO(fatih): replace server name with the FQDN or define VerifyPeerCertificate
-	serverName := "*.elb.amazonaws.com"
-	cfg := &tls.Config{
-		ServerName:   serverName,
-		Certificates: []tls.Certificate{cert.ClientCert},
-		RootCAs:      rootCA,
-		// We need to set InsecureSkipVerify to true due to
-		// https://github.com/GoogleCloudPlatform/cloudsql-proxy/issues/194
-		// https://tip.golang.org/doc/go1.11#crypto/x509
-		//
-		// Since we have a secure channel to the Cloud SQL API which we use to retrieve the
-		// certificates, we instead need to implement our own VerifyPeerCertificate function
-		// that will verify that the certificate is OK.
-		// InsecureSkipVerify:    true,
-		// VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
+		return fmt.Errorf("couldn't retrieve certs for instance: %q: %w", instance, err)
 	}
 
 	// TODO(fatih): implement refreshing certs
 	// go p.refreshCertAfter(instance, timeToRefresh)
 
 	var d net.Dialer
-	remoteConn, err := d.DialContext(ctx, "tcp", c.RemoteAddr)
+	remoteConn, err := d.DialContext(ctx, "tcp", c.remoteAddr)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("couldn't connect to %q: %v", c.RemoteAddr, err)
+		return fmt.Errorf("couldn't connect to %q: %v", c.remoteAddr, err)
 	}
 
 	type setKeepAliver interface {
@@ -215,6 +223,54 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 		"local connection on "+conn.LocalAddr().String(),
 	)
 	return nil
+}
+
+// clientCerts returns the TLS configuration needed for the TLS handshake and
+// connection
+func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config, error) {
+	cfg, err := c.configCache.Get(instance)
+	if err == nil {
+		log.Println("using tls.Config from the cache")
+		return cfg, nil
+	}
+
+	if err != errConfigNotFound {
+		return nil, err // we don't handle non errConfigNotFound errors
+	}
+
+	s := strings.Split(instance, "/")
+	if len(s) != 3 {
+		return nil, fmt.Errorf("instance format is malformed, should be in form organization/dbname/branch, have: %q", instance)
+	}
+
+	cert, err := c.certSource.Cert(ctx, s[0], s[1], s[2])
+	if err != nil {
+		return nil, fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
+	}
+
+	rootCA := x509.NewCertPool()
+	rootCA.AddCert(cert.CACert)
+
+	// TODO(fatih): replace server name with the FQDN or define VerifyPeerCertificate
+	serverName := "*.elb.amazonaws.com"
+	cfg = &tls.Config{
+		ServerName:   serverName,
+		Certificates: []tls.Certificate{cert.ClientCert},
+		RootCAs:      rootCA,
+		// We need to set InsecureSkipVerify to true due to
+		// https://github.com/GoogleCloudPlatform/cloudsql-proxy/issues/194
+		// https://tip.golang.org/doc/go1.11#crypto/x509
+		//
+		// Since we have a secure channel to the Cloud SQL API which we use to retrieve the
+		// certificates, we instead need to implement our own VerifyPeerCertificate function
+		// that will verify that the certificate is OK.
+		// InsecureSkipVerify:    true,
+		// VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
+	}
+
+	log.Println("adding tls.Config to the cache")
+	c.configCache.Add(instance, cfg)
+	return cfg, nil
 }
 
 // Shutdown waits up to a given amount of time for all active connections to

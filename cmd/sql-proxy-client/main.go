@@ -64,12 +64,12 @@ func realMain() error {
 		}
 	}
 
-	p := &proxy.Client{
+	p := proxy.NewClient(proxy.Options{
 		CertSource: certSource,
 		LocalAddr:  *localAddr,
 		RemoteAddr: *remoteAddr,
 		Instance:   *instance,
-	}
+	})
 
 	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
 	// https://go-review.googlesource.com/c/go/+/219640
