@@ -256,24 +256,32 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 		return nil, fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
 	}
 
-	rootCA := x509.NewCertPool()
-	rootCA.AddCert(cert.CACert)
+	rootCertPool := x509.NewCertPool()
+	rootCertPool.AddCert(cert.CACert)
 
-	// TODO(fatih): replace server name with the FQDN or define VerifyPeerCertificate
-	serverName := "localhost"
 	cfg = &tls.Config{
-		ServerName:   serverName,
+		ServerName:   instance,
 		Certificates: []tls.Certificate{cert.ClientCert},
-		RootCAs:      rootCA,
-		// We need to set InsecureSkipVerify to true due to
-		// https://github.com/GoogleCloudPlatform/cloudsql-proxy/issues/194
-		// https://tip.golang.org/doc/go1.11#crypto/x509
-		//
-		// Since we have a secure channel to the Cloud SQL API which we use to retrieve the
-		// certificates, we instead need to implement our own VerifyPeerCertificate function
-		// that will verify that the certificate is OK.
-		InsecureSkipVerify:    true,
-		VerifyPeerCertificate: genVerifyPeerCertificateFunc(serverName, rootCA),
+		RootCAs:      rootCertPool,
+		// Set InsecureSkipVerify to skip the default validation we are
+		// replacing. This will not disable VerifyConnection.
+		InsecureSkipVerify: true,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			expectedName := "*.elb.amazonaws.com"
+			commonName := cs.PeerCertificates[0].Subject.CommonName
+			if commonName != expectedName {
+				return fmt.Errorf("invalid certificate name %q, expected %q", commonName, expectedName)
+			}
+			opts := x509.VerifyOptions{
+				Roots:         rootCertPool,
+				Intermediates: x509.NewCertPool(),
+			}
+			for _, cert := range cs.PeerCertificates[1:] {
+				opts.Intermediates.AddCert(cert)
+			}
+			_, err := cs.PeerCertificates[0].Verify(opts)
+			return err
+		},
 	}
 
 	log.Println("adding tls.Config to the cache")
@@ -305,34 +313,6 @@ func (c *Client) Shutdown(timeout time.Duration) error {
 		return nil
 	}
 	return fmt.Errorf("%d active connections still exist after waiting for %v", active, timeout)
-}
-
-// genVerifyPeerCertificateFunc creates a VerifyPeerCertificate func that verifies that the peer
-// certificate is in the cert pool. We need to define our own because of our sketchy non-standard
-// CNs.
-// TODO(fatih): we might want to use it, hence keep it here
-// nolint: deadcode,unused
-func genVerifyPeerCertificateFunc(instanceName string, pool *x509.CertPool) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-		if len(rawCerts) == 0 {
-			return fmt.Errorf("no certificate to verify")
-		}
-
-		cert, err := x509.ParseCertificate(rawCerts[0])
-		if err != nil {
-			return fmt.Errorf("x509.ParseCertificate(rawCerts[0]) returned error: %v", err)
-		}
-
-		opts := x509.VerifyOptions{Roots: pool}
-		if _, err = cert.Verify(opts); err != nil {
-			return err
-		}
-
-		if cert.Subject.CommonName != instanceName {
-			return fmt.Errorf("certificate had CN %q, expected %q", cert.Subject.CommonName, instanceName)
-		}
-		return nil
-	}
 }
 
 func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc string) {
