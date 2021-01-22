@@ -16,11 +16,19 @@ import (
 
 	"github.com/planetscale/sql-proxy/sigutil"
 
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+)
+
+const (
+	organizationNameLabel             = "organization-name"
+	databaseBranchNameLabel           = "database-branch-name"
+	databaseBranchCollectionNameLabel = "database-branch-collection-name"
 )
 
 type server struct {
@@ -65,11 +73,6 @@ func realMain() error {
 		return err
 	}
 
-	kubeClient, err := newKubeClient(*kubeConfig)
-	if err != nil {
-		return err
-	}
-
 	cfg := &tls.Config{
 		PreferServerCipherSuites: true,
 		MinVersion:               tls.VersionTLS12,
@@ -99,10 +102,19 @@ func realMain() error {
 
 	srv := &server{
 		cfg:         cfg,
-		kubeClient:  kubeClient,
 		namespace:   *kubeNamespace,
 		localAddr:   *localAddr,
 		backendAddr: *backendAddr,
+	}
+
+	if *kubeConfig != "" {
+		var err error
+		srv.kubeClient, err = newKubeClient(*kubeConfig)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Println("WARN: kubeconfig not found")
 	}
 
 	log.Println("ready for new connections")
@@ -116,6 +128,8 @@ func (s *server) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer l.Close()
+
 	return s.run(ctx, l)
 }
 
@@ -167,6 +181,12 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	// TODO(fatih): do the routing based on CN
 	org, db, branch := st[0], st[1], st[2]
 	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
+
+	serviceIP, err := s.getServiceIP(ctx, org, db, branch)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("servceIP = %+v\n", serviceIP)
 
 	var d net.Dialer
 	backendConn, err := d.DialContext(ctx, "tcp", s.backendAddr) // mysql instance
@@ -283,4 +303,31 @@ func newKubeClient(kubeConfigPath string) (client.Client, error) {
 	}
 
 	return cl, nil
+}
+
+func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (string, error) {
+	selector := labels.Set{
+		organizationNameLabel:             org,
+		databaseBranchNameLabel:           db,
+		databaseBranchCollectionNameLabel: branch,
+	}.AsSelector()
+
+	listOpts := &client.ListOptions{
+		Namespace:     s.namespace,
+		LabelSelector: selector,
+	}
+
+	list := &v1.ServiceList{}
+	if err := s.kubeClient.List(ctx, list, listOpts); err != nil {
+		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s'",
+			org, db, branch)
+	}
+
+	if len(list.Items) == 0 {
+		return "", fmt.Errorf("no services found for '%s/%s/%s'",
+			org, db, branch)
+	}
+
+	svc := list.Items[0]
+	return svc.Spec.ClusterIP, nil
 }
