@@ -5,6 +5,6 @@ go 1.15
 require (
 	github.com/frankban/quicktest v1.11.3
 	github.com/google/go-cmp v0.5.4
-	github.com/planetscale/planetscale-go v0.0.0-20210114193855-f4e19dd2aecd
+	github.com/planetscale/planetscale-go v0.1.0
 	golang.org/x/net v0.0.0-20210119194325-5f4716e94777
 )
