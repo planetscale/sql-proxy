@@ -15,12 +15,22 @@ import (
 	"time"
 
 	"github.com/planetscale/sql-proxy/sigutil"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 type server struct {
 	cfg         *tls.Config
 	localAddr   string
 	backendAddr string
+
+	// k8s bits
+	kubeClient client.Client
+	namespace  string
 }
 
 func main() {
@@ -37,6 +47,9 @@ func realMain() error {
 	backendAddr := flag.String("backend-addr", "127.0.0.1:3306", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
 
+	kubeConfig := flag.String("kubeconfig", "", "Path to the kubeconfig file.")
+	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
+
 	flag.Parse()
 
 	caBuf, err := ioutil.ReadFile(*caPath)
@@ -48,6 +61,11 @@ func realMain() error {
 	rootCertPool.AppendCertsFromPEM(caBuf)
 
 	certs, err := tls.LoadX509KeyPair(*serverCertPath, *serverKeyPath)
+	if err != nil {
+		return err
+	}
+
+	kubeClient, err := newKubeClient(*kubeConfig)
 	if err != nil {
 		return err
 	}
@@ -81,6 +99,8 @@ func realMain() error {
 
 	srv := &server{
 		cfg:         cfg,
+		kubeClient:  kubeClient,
+		namespace:   *kubeNamespace,
 		localAddr:   *localAddr,
 		backendAddr: *backendAddr,
 	}
@@ -221,4 +241,46 @@ func logError(readDesc, writeDesc string, readErr bool, err error) {
 		desc = "writing data to " + writeDesc
 	}
 	log.Printf("%v had error: %v", desc, err)
+}
+
+func newKubeClient(kubeConfigPath string) (client.Client, error) {
+	out, err := ioutil.ReadFile(kubeConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(out)
+	if err != nil {
+		return nil, fmt.Errorf("can't parse kubeconfig: %v", err)
+	}
+
+	var (
+		// supportedK8sSchemeAddFuncs determines which resources we register in our k8s client.
+		supportedK8sSchemeAddFuncs = []func(*runtime.Scheme) error{
+			// core/v1, apps/v1 etc.
+			k8sscheme.AddToScheme,
+		}
+	)
+
+	scheme := runtime.NewScheme()
+	for _, addFunc := range supportedK8sSchemeAddFuncs {
+		if err := addFunc(scheme); err != nil {
+			return nil, fmt.Errorf("can't add resources to scheme: %v", err)
+		}
+	}
+
+	mapper, err := apiutil.NewDiscoveryRESTMapper(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("can't create DiscoveryRESTMapper: %v", err)
+	}
+
+	cl, err := client.New(restConfig, client.Options{
+		Scheme: scheme,
+		Mapper: mapper,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create k8s client: %s", err)
+	}
+
+	return cl, nil
 }
