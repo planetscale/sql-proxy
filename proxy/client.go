@@ -267,11 +267,14 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 		// replacing. This will not disable VerifyConnection.
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			expectedName := "*.elb.amazonaws.com"
-			commonName := cs.PeerCertificates[0].Subject.CommonName
-			if commonName != expectedName {
-				return fmt.Errorf("invalid certificate name %q, expected %q", commonName, expectedName)
-			}
+			// For now, only verify the server's certificate chain.
+			// We don't know yet what the server's FQDN will be.
+			//
+			// 			serverName := cs.ServerName
+			// 			commonName := cs.PeerCertificates[0].Subject.CommonName
+			// 			if commonName != serverName {
+			// 				return fmt.Errorf("invalid certificate name %q, expected %q", commonName, serverName)
+			// 			}
 			opts := x509.VerifyOptions{
 				Roots:         rootCertPool,
 				Intermediates: x509.NewCertPool(),
