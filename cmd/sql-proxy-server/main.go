@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 )
 
 func main() {
@@ -32,8 +33,8 @@ func realMain() error {
 		return err
 	}
 
-	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caBuf)
+	rootCertPool := x509.NewCertPool()
+	rootCertPool.AppendCertsFromPEM(caBuf)
 
 	certs, err := tls.LoadX509KeyPair(*serverCertPath, *serverKeyPath)
 	if err != nil {
@@ -52,8 +53,24 @@ func realMain() error {
 	cfg := &tls.Config{
 		PreferServerCipherSuites: true,
 		MinVersion:               tls.VersionTLS12,
-		ClientCAs:                caPool,
+		ClientCAs:                rootCertPool,
 		Certificates:             []tls.Certificate{certs},
+		ClientAuth:               tls.RequireAndVerifyClientCert,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			commonName := cs.PeerCertificates[0].Subject.CommonName
+			if commonName != cs.ServerName {
+				return fmt.Errorf("invalid certificate name %q, expected %q", commonName, cs.ServerName)
+			}
+			opts := x509.VerifyOptions{
+				Roots:         rootCertPool,
+				Intermediates: x509.NewCertPool(),
+			}
+			for _, cert := range cs.PeerCertificates[1:] {
+				opts.Intermediates.AddCert(cert)
+			}
+			_, err := cs.PeerCertificates[0].Verify(opts)
+			return err
+		},
 	}
 
 	for {
@@ -61,9 +78,26 @@ func realMain() error {
 		if err != nil {
 			return err
 		}
-		tlsConn := tls.Server(c, cfg)
 
-		log.Printf("new connection for %q", *backendAddr)
+		tlsConn := tls.Server(c, cfg)
+		// normally this is done automatically, but we need to access to
+		// ConnectionState, which is only populated after a successfull
+		// handshake
+		if err := tlsConn.Handshake(); err != nil {
+			return err
+		}
+
+		cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
+		log.Printf("new connection for %q with CN: %q", *backendAddr, cn)
+
+		s := strings.Split(cn, "/")
+		if len(s) != 3 {
+			return fmt.Errorf("CN instance format is malformed, should be in form organization/dbname/branch, have: %q", cn)
+		}
+
+		// TODO(fatih): do the routing based on CN
+		org, db, branch := s[0], s[1], s[2]
+		log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
 
 		backendConn, err := net.Dial("tcp", *backendAddr) // mysql instance
 		if err != nil {
