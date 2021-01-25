@@ -12,12 +12,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
-	"os/signal"
 	"syscall"
 
 	ps "github.com/planetscale/planetscale-go"
 	"github.com/planetscale/sql-proxy/proxy"
+	"github.com/planetscale/sql-proxy/sigutil"
 )
 
 func main() {
@@ -73,7 +72,7 @@ func realMain() error {
 
 	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
 	// https://go-review.googlesource.com/c/go/+/219640
-	ctx := withSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx := sigutil.WithSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	log.Println("ready for new connections")
 	return p.Run(ctx)
@@ -160,24 +159,4 @@ func parseCert(pemCert []byte) (*x509.Certificate, error) {
 		return nil, errors.New("invalid PEM: " + string(pemCert))
 	}
 	return x509.ParseCertificate(bl.Bytes)
-}
-
-// withSignal returns a copy of the parent context with the context cancel
-// function adjusted to be called when one of the given signals is received.
-func withSignal(ctx context.Context, sig ...os.Signal) context.Context {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, sig...)
-	ctx, cancel := context.WithCancel(ctx)
-
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-c:
-		}
-
-		cancel()
-		signal.Stop(c)
-	}()
-
-	return ctx
 }

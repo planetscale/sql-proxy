@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
@@ -10,7 +11,36 @@ import (
 	"log"
 	"net"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/planetscale/sql-proxy/sigutil"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8sscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
+
+const (
+	organizationNameLabel             = "organization-name"
+	databaseBranchCollectionNameLabel = "database-branch-collection-name"
+	databaseBranchNameLabel           = "database-branch-name"
+	psComponentLabel                  = "planetscale.com/component"
+)
+
+type server struct {
+	cfg         *tls.Config
+	localAddr   string
+	backendAddr string
+
+	// k8s bits
+	kubeClient client.Client
+	namespace  string
+}
 
 func main() {
 	if err := realMain(); err != nil {
@@ -23,8 +53,10 @@ func realMain() error {
 	serverCertPath := flag.String("cert", "testcerts/server-cert.pem", "MySQL server Cert path")
 	serverKeyPath := flag.String("key", "testcerts/server-key.pem", "MySQL server Key path")
 
-	backendAddr := flag.String("backend-addr", "127.0.0.1:3306",
-		"MySQL backend network address")
+	backendAddr := flag.String("backend-addr", "127.0.0.1:3306", "MySQL backend network address")
+	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
+
+	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
 
 	flag.Parse()
 
@@ -37,15 +69,6 @@ func realMain() error {
 	rootCertPool.AppendCertsFromPEM(caBuf)
 
 	certs, err := tls.LoadX509KeyPair(*serverCertPath, *serverKeyPath)
-	if err != nil {
-		return err
-	}
-
-	localAddr := "127.0.0.1:3308"
-
-	log.Printf("listening on %s", localAddr)
-
-	l, err := net.Listen("tcp", localAddr)
 	if err != nil {
 		return err
 	}
@@ -73,39 +96,100 @@ func realMain() error {
 		},
 	}
 
-	for {
-		c, err := l.Accept()
-		if err != nil {
-			return err
-		}
+	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
+	// https://go-review.googlesource.com/c/go/+/219640
+	ctx := sigutil.WithSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-		tlsConn := tls.Server(c, cfg)
-		// normally this is done automatically, but we need to access to
-		// ConnectionState, which is only populated after a successfull
-		// handshake
-		if err := tlsConn.Handshake(); err != nil {
-			return err
-		}
-
-		cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
-		log.Printf("new connection for %q with CN: %q", *backendAddr, cn)
-
-		s := strings.Split(cn, "/")
-		if len(s) != 3 {
-			return fmt.Errorf("CN instance format is malformed, should be in form organization/dbname/branch, have: %q", cn)
-		}
-
-		// TODO(fatih): do the routing based on CN
-		org, db, branch := s[0], s[1], s[2]
-		log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
-
-		backendConn, err := net.Dial("tcp", *backendAddr) // mysql instance
-		if err != nil {
-			return fmt.Errorf("couldn't connect to backend: %s", err)
-		}
-
-		copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+*backendAddr)
+	srv := &server{
+		cfg:         cfg,
+		namespace:   *kubeNamespace,
+		localAddr:   *localAddr,
+		backendAddr: *backendAddr,
 	}
+
+	srv.kubeClient, err = newKubeClient()
+	if err != nil {
+		log.Printf("WARN: kubeconfig not found: %s\n", err)
+	}
+
+	log.Println("ready for new connections")
+	return srv.Run(ctx)
+}
+
+// Run runs the server proxy
+func (s *server) Run(ctx context.Context) error {
+	log.Printf("listening on %s", s.localAddr)
+	l, err := net.Listen("tcp", s.localAddr)
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+
+	return s.run(ctx, l)
+}
+
+// run runs the server proxy. This is an unexported function to make testing
+// usable.
+func (s *server) run(ctx context.Context, l net.Listener) error {
+	for {
+		select {
+		case <-ctx.Done():
+			termTimeout := time.Second * 1
+			log.Printf("received context cancellation. Waiting up to %s before terminating.", termTimeout)
+			return nil
+		default:
+			c, err := l.Accept()
+			if err != nil {
+				return err
+			}
+			defer l.Close()
+
+			go func() {
+				if err := s.handleConn(ctx, c); err != nil {
+					log.Printf("error proxying conn: %s", err)
+				}
+			}()
+		}
+	}
+}
+
+// handleConn proxies the given connection to the appropriate vtgate cluster
+// based on the information baked into CN.
+func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
+	tlsConn := tls.Server(conn, s.cfg)
+
+	// normally this is done automatically, but we need to access to
+	// ConnectionState, which is only populated after a successfull
+	// handshake
+	if err := tlsConn.Handshake(); err != nil {
+		return err
+	}
+
+	cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
+	log.Printf("new connection for %q with CN: %q", s.backendAddr, cn)
+
+	st := strings.Split(cn, "/")
+	if len(st) != 3 {
+		return fmt.Errorf("CN instance format is malformed, should be in form organization/dbname/branch, have: %q", cn)
+	}
+
+	org, db, branch := st[0], st[1], st[2]
+	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
+
+	serviceIP, err := s.getServiceIP(ctx, org, db, branch)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("servceIP = %+v\n", serviceIP)
+
+	var d net.Dialer
+	backendConn, err := d.DialContext(ctx, "tcp", s.backendAddr) // mysql instance
+	if err != nil {
+		return fmt.Errorf("couldn't connect to backend: %s", err)
+	}
+
+	copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+s.backendAddr)
+	return nil
 }
 
 func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc string) {
@@ -171,4 +255,69 @@ func logError(readDesc, writeDesc string, readErr bool, err error) {
 		desc = "writing data to " + writeDesc
 	}
 	log.Printf("%v had error: %v", desc, err)
+}
+
+func newKubeClient() (client.Client, error) {
+	restConfig, err := config.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("can't parse kubeconfig: %v", err)
+	}
+
+	var (
+		// supportedK8sSchemeAddFuncs determines which resources we register in our k8s client.
+		supportedK8sSchemeAddFuncs = []func(*runtime.Scheme) error{
+			// core/v1, apps/v1 etc.
+			k8sscheme.AddToScheme,
+		}
+	)
+
+	scheme := runtime.NewScheme()
+	for _, addFunc := range supportedK8sSchemeAddFuncs {
+		if err := addFunc(scheme); err != nil {
+			return nil, fmt.Errorf("can't add resources to scheme: %v", err)
+		}
+	}
+
+	mapper, err := apiutil.NewDiscoveryRESTMapper(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("can't create DiscoveryRESTMapper: %v", err)
+	}
+
+	cl, err := client.New(restConfig, client.Options{
+		Scheme: scheme,
+		Mapper: mapper,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create k8s client: %s", err)
+	}
+
+	return cl, nil
+}
+
+func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (string, error) {
+	selector := labels.Set{
+		organizationNameLabel:             org,
+		databaseBranchCollectionNameLabel: db,
+		databaseBranchNameLabel:           branch,
+		psComponentLabel:                  "vtgate",
+	}.AsSelector()
+
+	listOpts := &client.ListOptions{
+		Namespace:     s.namespace,
+		LabelSelector: selector,
+	}
+
+	list := &v1.ServiceList{}
+	if err := s.kubeClient.List(ctx, list, listOpts); err != nil {
+		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s'",
+			org, db, branch)
+	}
+
+	if len(list.Items) == 0 {
+		return "", fmt.Errorf("no services found for '%s/%s/%s'",
+			org, db, branch)
+	}
+
+	svc := list.Items[0]
+	return svc.Spec.ClusterIP, nil
 }
