@@ -54,9 +54,9 @@ func main() {
 }
 
 func realMain() error {
-	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
-	serverCertPath := flag.String("cert", "testcerts/server-cert.pem", "MySQL server Cert path")
-	serverKeyPath := flag.String("key", "testcerts/server-key.pem", "MySQL server Key path")
+	caPath := flag.String("ca-file", "testcerts/ca.pem", "MySQL CA Cert path")
+	serverCertPath := flag.String("cert-file", "testcerts/server-cert.pem", "MySQL server Cert path")
+	serverKeyPath := flag.String("key-file", "testcerts/server-key.pem", "MySQL server Key path")
 
 	// backendAddr is used to manually override the routing via kubernetes
 	// service. Useful for manual testing.
