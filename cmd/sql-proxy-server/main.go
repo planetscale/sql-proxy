@@ -20,9 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -55,7 +55,6 @@ func realMain() error {
 	backendAddr := flag.String("backend-addr", "127.0.0.1:3306", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
 
-	kubeConfig := flag.String("kubeconfig", "", "Path to the kubeconfig file.")
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
 
 	flag.Parse()
@@ -107,14 +106,9 @@ func realMain() error {
 		backendAddr: *backendAddr,
 	}
 
-	if *kubeConfig != "" {
-		var err error
-		srv.kubeClient, err = newKubeClient(*kubeConfig)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Println("WARN: kubeconfig not found")
+	srv.kubeClient, err = newKubeClient()
+	if err != nil {
+		log.Printf("WARN: kubeconfig not found: %s\n", err)
 	}
 
 	log.Println("ready for new connections")
@@ -262,13 +256,8 @@ func logError(readDesc, writeDesc string, readErr bool, err error) {
 	log.Printf("%v had error: %v", desc, err)
 }
 
-func newKubeClient(kubeConfigPath string) (client.Client, error) {
-	out, err := ioutil.ReadFile(kubeConfigPath)
-	if err != nil {
-		return nil, err
-	}
-
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(out)
+func newKubeClient() (client.Client, error) {
+	restConfig, err := config.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("can't parse kubeconfig: %v", err)
 	}
