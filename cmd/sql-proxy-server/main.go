@@ -27,8 +27,8 @@ import (
 
 const (
 	organizationNameLabel             = "organization-name"
-	databaseBranchNameLabel           = "database-branch-name"
 	databaseBranchCollectionNameLabel = "database-branch-collection-name"
+	databaseBranchNameLabel           = "database-branch-name"
 )
 
 type server struct {
@@ -307,8 +307,8 @@ func newKubeClient(kubeConfigPath string) (client.Client, error) {
 func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (string, error) {
 	selector := labels.Set{
 		organizationNameLabel:             org,
-		databaseBranchNameLabel:           db,
-		databaseBranchCollectionNameLabel: branch,
+		databaseBranchCollectionNameLabel: db,
+		databaseBranchNameLabel:           branch,
 	}.AsSelector()
 
 	listOpts := &client.ListOptions{
