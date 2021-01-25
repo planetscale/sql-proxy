@@ -32,6 +32,11 @@ const (
 	psComponentLabel                  = "planetscale.com/component"
 )
 
+var (
+	commit       string
+	gitTreeState string
+)
+
 type server struct {
 	cfg         *tls.Config
 	localAddr   string
@@ -118,7 +123,8 @@ func realMain() error {
 		}
 	}
 
-	log.Println("ready for new connections")
+	log.Printf("ready for new connections [version: %q] [git tree state: %q]\n",
+		commit, gitTreeState)
 	return srv.Run(ctx)
 }
 
