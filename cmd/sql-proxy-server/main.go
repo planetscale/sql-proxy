@@ -178,7 +178,6 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("CN instance format is malformed, should be in form organization/dbname/branch, have: %q", cn)
 	}
 
-	// TODO(fatih): do the routing based on CN
 	org, db, branch := st[0], st[1], st[2]
 	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
 
