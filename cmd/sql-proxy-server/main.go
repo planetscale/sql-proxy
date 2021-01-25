@@ -53,7 +53,9 @@ func realMain() error {
 	serverCertPath := flag.String("cert", "testcerts/server-cert.pem", "MySQL server Cert path")
 	serverKeyPath := flag.String("key", "testcerts/server-key.pem", "MySQL server Key path")
 
-	backendAddr := flag.String("backend-addr", "127.0.0.1:3306", "MySQL backend network address")
+	// backendAddr is used to manually override the routing via kubernetes
+	// service. Useful for manual testing.
+	backendAddr := flag.String("backend-addr", "", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
 
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
@@ -107,9 +109,13 @@ func realMain() error {
 		backendAddr: *backendAddr,
 	}
 
-	srv.kubeClient, err = newKubeClient()
-	if err != nil {
-		log.Printf("WARN: kubeconfig not found: %s\n", err)
+	if *backendAddr != "" {
+		srv.backendAddr = *backendAddr
+	} else {
+		srv.kubeClient, err = newKubeClient()
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Println("ready for new connections")
@@ -176,19 +182,23 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	org, db, branch := st[0], st[1], st[2]
 	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
 
-	serviceIP, err := s.getServiceIP(ctx, org, db, branch)
-	if err != nil {
-		return err
+	vtgateAddr := s.backendAddr
+	if vtgateAddr == "" {
+		serviceIP, err := s.getServiceIP(ctx, org, db, branch)
+		if err != nil {
+			return err
+		}
+
+		vtgateAddr = serviceIP
 	}
-	fmt.Printf("servceIP = %+v\n", serviceIP)
 
 	var d net.Dialer
-	backendConn, err := d.DialContext(ctx, "tcp", s.backendAddr) // mysql instance
+	backendConn, err := d.DialContext(ctx, "tcp", vtgateAddr) // mysql instance
 	if err != nil {
 		return fmt.Errorf("couldn't connect to backend: %s", err)
 	}
 
-	copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+s.backendAddr)
+	copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+vtgateAddr)
 	return nil
 }
 
