@@ -29,6 +29,7 @@ const (
 	organizationNameLabel             = "organization-name"
 	databaseBranchCollectionNameLabel = "database-branch-collection-name"
 	databaseBranchNameLabel           = "database-branch-name"
+	psComponentLabel                  = "planetscale.com/component"
 )
 
 type server struct {
@@ -298,6 +299,7 @@ func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (stri
 		organizationNameLabel:             org,
 		databaseBranchCollectionNameLabel: db,
 		databaseBranchNameLabel:           branch,
+		psComponentLabel:                  "vtgate",
 	}.AsSelector()
 
 	listOpts := &client.ListOptions{

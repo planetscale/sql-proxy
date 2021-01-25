@@ -24,18 +24,13 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-<<<<<<< HEAD
-=======
 # github.com/google/gofuzz v1.1.0
 github.com/google/gofuzz
-# github.com/google/jsonapi v0.0.0-20201022225600-f822737867f6
-github.com/google/jsonapi
 # github.com/googleapis/gnostic v0.5.1
 github.com/googleapis/gnostic/compiler
 github.com/googleapis/gnostic/extensions
 github.com/googleapis/gnostic/jsonschema
 github.com/googleapis/gnostic/openapiv2
->>>>>>> 2185ebb (Vendor sigs.k8s.io/controller-runtime/pkg/client)
 # github.com/hashicorp/go-cleanhttp v0.5.1
 github.com/hashicorp/go-cleanhttp
 # github.com/imdario/mergo v0.3.10
