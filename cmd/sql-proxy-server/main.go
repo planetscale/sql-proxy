@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -54,9 +55,9 @@ func main() {
 }
 
 func realMain() error {
-	caPath := flag.String("ca-file", "testcerts/ca.pem", "MySQL CA Cert path")
-	serverCertPath := flag.String("cert-file", "testcerts/server-cert.pem", "MySQL server Cert path")
-	serverKeyPath := flag.String("key-file", "testcerts/server-key.pem", "MySQL server Key path")
+	caPath := flag.String("ca-file", "", "MySQL CA Cert path")
+	serverCertPath := flag.String("cert-file", "", "MySQL server Cert path")
+	serverKeyPath := flag.String("key-file", "", "MySQL server Key path")
 
 	// backendAddr is used to manually override the routing via kubernetes
 	// service. Useful for manual testing.
@@ -64,6 +65,10 @@ func realMain() error {
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
 
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
+
+	if *caPath == "" || *serverCertPath == "" || *serverKeyPath == "" {
+		return errors.New("-ca-file, -cert-file or -key-file is empty")
+	}
 
 	flag.Parse()
 
