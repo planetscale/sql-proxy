@@ -196,12 +196,12 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 
 	vtgateAddr := s.backendAddr
 	if vtgateAddr == "" {
-		serviceIP, err := s.getServiceIP(ctx, org, db, branch)
+		serviceAddr, err := s.getServiceAddr(ctx, org, db, branch)
 		if err != nil {
 			return err
 		}
 
-		vtgateAddr = serviceIP
+		vtgateAddr = serviceAddr
 	}
 
 	var d net.Dialer
@@ -316,7 +316,7 @@ func newKubeClient() (client.Client, error) {
 	return cl, nil
 }
 
-func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (string, error) {
+func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (string, error) {
 	selector := labels.Set{
 		organizationNameLabel:             org,
 		databaseBranchCollectionNameLabel: db,
@@ -344,5 +344,21 @@ func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (stri
 	}
 
 	svc := list.Items[0]
-	return svc.Spec.ClusterIP, nil
+
+	if len(svc.Spec.Ports) == 0 {
+		return "", fmt.Errorf("there are no ports defined for the service: %q", svc.Name)
+	}
+
+	var port int32
+	for _, p := range svc.Spec.Ports {
+		if p.Name == "mysql" {
+			p.Port = port
+		}
+	}
+
+	if port == 0 {
+		return "", errors.New("couldn't find a service port named 'mysql'")
+	}
+
+	return fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port), nil
 }

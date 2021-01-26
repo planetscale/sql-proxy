@@ -41,7 +41,7 @@ deploy:
 
 .PHONY: logs
 logs: 
-	@psk staging aws useast1 2 logs -l 'app=${NAME}'
+	@psk staging aws useast1 2 logs --tail 100 -l 'app=${NAME}' -f
 
 .PHONY: status
 status: 
