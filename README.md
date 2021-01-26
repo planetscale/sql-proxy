@@ -11,7 +11,7 @@ sockets are used.
 Install the proxy
 
 ```go
-go get github.com/planetscale/sql-proxy/cmd/sql-client-proxy
+go get github.com/planetscale/sql-proxy/cmd/sql-proxy-client
 ```
 
 Authenticate with [`pscale`](https://github.com/planetscale/cli):
@@ -23,9 +23,9 @@ pscale auth login
 Run the proxy by passing the `organization/database/branch` combination you want to connect:
 
 ```
-sql-client-proxy --token "$(cat ~/.config/planetscale/access-token)" --instance "org/db/branch" 
+sql-proxy-client --token "$(cat ~/.config/planetscale/access-token)" --instance "org/db/branch" 
 ```
-This will run the `sql-client-proxy` on your localhost and bind to
+This will run the `sql-proxy-client` on your localhost and bind to
 `127.0.0.1:3307`. You should use this address to connect your application. As
 an example, here is how you can connect with the `mysql` CLI:
 
