@@ -119,7 +119,7 @@ func realMain() error {
 	}
 
 	if *backendAddr != "" {
-		log.Printf("disabling kube client, using the provided backend addr", *backendAddr)
+		log.Printf("disabling kube client, using the provided backend addr: %s\n", *backendAddr)
 		srv.backendAddr = *backendAddr
 	} else {
 		log.Printf("initalized kube client")
