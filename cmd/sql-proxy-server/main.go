@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,6 +33,11 @@ const (
 	psComponentLabel                  = "planetscale.com/component"
 )
 
+var (
+	commit       string
+	gitTreeState string
+)
+
 type server struct {
 	cfg         *tls.Config
 	localAddr   string
@@ -49,18 +55,21 @@ func main() {
 }
 
 func realMain() error {
-	caPath := flag.String("ca", "testcerts/ca.pem", "MySQL CA Cert path")
-	serverCertPath := flag.String("cert", "testcerts/server-cert.pem", "MySQL server Cert path")
-	serverKeyPath := flag.String("key", "testcerts/server-key.pem", "MySQL server Key path")
+	caPath := flag.String("ca-file", "", "MySQL CA Cert path")
+	serverCertPath := flag.String("cert-file", "", "MySQL server Cert path")
+	serverKeyPath := flag.String("key-file", "", "MySQL server Key path")
 
 	// backendAddr is used to manually override the routing via kubernetes
 	// service. Useful for manual testing.
 	backendAddr := flag.String("backend-addr", "", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
-
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
 
 	flag.Parse()
+
+	if *caPath == "" || *serverCertPath == "" || *serverKeyPath == "" {
+		return errors.New("-ca-file, -cert-file or -key-file is empty")
+	}
 
 	caBuf, err := ioutil.ReadFile(*caPath)
 	if err != nil {
@@ -110,15 +119,18 @@ func realMain() error {
 	}
 
 	if *backendAddr != "" {
+		log.Printf("disabling kube client, using the provided backend addr: %s\n", *backendAddr)
 		srv.backendAddr = *backendAddr
 	} else {
+		log.Printf("initalized kube client")
 		srv.kubeClient, err = newKubeClient()
 		if err != nil {
 			return err
 		}
 	}
 
-	log.Println("ready for new connections")
+	log.Printf("ready for new connections [version: %q] [git tree state: %q]\n",
+		commit, gitTreeState)
 	return srv.Run(ctx)
 }
 
@@ -168,11 +180,11 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	// ConnectionState, which is only populated after a successfull
 	// handshake
 	if err := tlsConn.Handshake(); err != nil {
-		return err
+		return fmt.Errorf("couldn't establish a TLS handshake: %s", err)
 	}
 
 	cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
-	log.Printf("new connection for %q with CN: %q", s.backendAddr, cn)
+	log.Printf("new connection received for with CN: %q", cn)
 
 	st := strings.Split(cn, "/")
 	if len(st) != 3 {
@@ -180,16 +192,15 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	}
 
 	org, db, branch := st[0], st[1], st[2]
-	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
 
 	vtgateAddr := s.backendAddr
 	if vtgateAddr == "" {
-		serviceIP, err := s.getServiceIP(ctx, org, db, branch)
+		serviceAddr, err := s.getServiceAddr(ctx, org, db, branch)
 		if err != nil {
 			return err
 		}
 
-		vtgateAddr = serviceIP
+		vtgateAddr = serviceAddr
 	}
 
 	var d net.Dialer
@@ -304,7 +315,7 @@ func newKubeClient() (client.Client, error) {
 	return cl, nil
 }
 
-func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (string, error) {
+func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (string, error) {
 	selector := labels.Set{
 		organizationNameLabel:             org,
 		databaseBranchCollectionNameLabel: db,
@@ -319,8 +330,8 @@ func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (stri
 
 	list := &v1.ServiceList{}
 	if err := s.kubeClient.List(ctx, list, listOpts); err != nil {
-		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s'",
-			org, db, branch)
+		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s': %s",
+			org, db, branch, err)
 	}
 
 	if len(list.Items) == 0 {
@@ -329,5 +340,21 @@ func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (stri
 	}
 
 	svc := list.Items[0]
-	return svc.Spec.ClusterIP, nil
+
+	if len(svc.Spec.Ports) == 0 {
+		return "", fmt.Errorf("there are no ports defined for the service: %q", svc.Name)
+	}
+
+	var port int32
+	for _, p := range svc.Spec.Ports {
+		if p.Name == "mysql" {
+			port = p.Port
+		}
+	}
+
+	if port == 0 {
+		return "", errors.New("couldn't find a service port named 'mysql'")
+	}
+
+	return fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port), nil
 }
