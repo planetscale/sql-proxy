@@ -63,14 +63,13 @@ func realMain() error {
 	// service. Useful for manual testing.
 	backendAddr := flag.String("backend-addr", "", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
-
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
+
+	flag.Parse()
 
 	if *caPath == "" || *serverCertPath == "" || *serverKeyPath == "" {
 		return errors.New("-ca-file, -cert-file or -key-file is empty")
 	}
-
-	flag.Parse()
 
 	caBuf, err := ioutil.ReadFile(*caPath)
 	if err != nil {
