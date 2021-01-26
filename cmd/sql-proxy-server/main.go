@@ -119,8 +119,10 @@ func realMain() error {
 	}
 
 	if *backendAddr != "" {
+		log.Printf("disabling kube client, using the provided backend addr", *backendAddr)
 		srv.backendAddr = *backendAddr
 	} else {
+		log.Printf("initalized kube client")
 		srv.kubeClient, err = newKubeClient()
 		if err != nil {
 			return err
@@ -326,11 +328,14 @@ func (s *server) getServiceIP(ctx context.Context, org, db, branch string) (stri
 		Namespace:     s.namespace,
 		LabelSelector: selector,
 	}
+	log.Printf("listOpts = %+v\n", listOpts)
+	log.Printf("selector = %+v\n", selector)
+	fmt.Printf("selector.String() = %+v\n", selector.String())
 
 	list := &v1.ServiceList{}
 	if err := s.kubeClient.List(ctx, list, listOpts); err != nil {
-		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s'",
-			org, db, branch)
+		return "", fmt.Errorf("couldn't list services found for '%s/%s/%s': %s",
+			org, db, branch, err)
 	}
 
 	if len(list.Items) == 0 {

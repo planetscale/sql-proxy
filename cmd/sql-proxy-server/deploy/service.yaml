@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sql-proxy-server
+spec:
+  selector:
+    app: sql-proxy-server
+  ports:
+    - port: 3306
+      targetPort: 3308
+  type: LoadBalancer

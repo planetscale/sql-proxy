@@ -27,6 +27,7 @@ spec:
           - "-ca-file=/secrets/certs/ca.pem"
           - "-cert-file=/secrets/certs/cert.pem"
           - "-key-file=/secrets/certs/key.pem"
+          - "-local-addr=0.0.0.0:3308"
         volumeMounts:
         - name: tls-certs
           mountPath: /secrets/certs

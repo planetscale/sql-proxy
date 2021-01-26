@@ -34,6 +34,22 @@ push:
 	@docker push ${REPO}/${NAME}:latest
 	@docker push ${REPO}/${NAME}:$(VERSION)
 
+.PHONY: deploy
+deploy: 
+	@echo "==> Deploying ${NAME}"
+	@psk staging aws useast1 2 apply -f deploy/deployment.yaml 
+
+.PHONY: logs
+logs: 
+	@psk staging aws useast1 2 logs -l 'app=${NAME}'
+
+.PHONY: status
+status: 
+	@psk staging aws useast1 2 get deployments/${NAME}
+	@psk staging aws useast1 2 get pods -l 'app=${NAME}'
+	@psk staging aws useast1 2 describe deployments/${NAME}
+
+
 .PHONY: clean
 clean:
 	@echo "==> Cleaning artifacts"
