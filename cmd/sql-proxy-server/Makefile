@@ -13,8 +13,8 @@ endif
 COMMIT ?= $(shell git rev-parse HEAD)
 LDFLAGS ?= -X main.commit=${GITCOMMIT_LONG} -X main.gitTreeState=${GIT_TREE_STATE}
 
-.PHONY: build build-image push clean
-all: build build-image push clean
+.PHONY: build build-image push deploy clean
+all: build build-image push deploy clean
 
 .PHONY: build
 build:
@@ -38,6 +38,8 @@ push:
 deploy: 
 	@echo "==> Deploying ${NAME}"
 	@psk staging aws useast1 2 apply -f deploy/deployment.yaml 
+	# make sure to delete pods, so we new pods are created with the :latest image
+	@psk staging aws useast1 2 delete pods -l "app=sql-proxy-server"
 
 .PHONY: logs
 logs: 

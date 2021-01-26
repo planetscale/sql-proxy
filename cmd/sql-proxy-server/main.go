@@ -180,11 +180,11 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	// ConnectionState, which is only populated after a successfull
 	// handshake
 	if err := tlsConn.Handshake(); err != nil {
-		return err
+		return fmt.Errorf("couldn't establish a TLS handshake: %s", err)
 	}
 
 	cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
-	log.Printf("new connection for %q with CN: %q", s.backendAddr, cn)
+	log.Printf("new connection received for with CN: %q", cn)
 
 	st := strings.Split(cn, "/")
 	if len(st) != 3 {
@@ -192,7 +192,6 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	}
 
 	org, db, branch := st[0], st[1], st[2]
-	log.Printf("CN verified: %s/%s/%s\n", org, db, branch)
 
 	vtgateAddr := s.backendAddr
 	if vtgateAddr == "" {
@@ -328,9 +327,6 @@ func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (st
 		Namespace:     s.namespace,
 		LabelSelector: selector,
 	}
-	log.Printf("listOpts = %+v\n", listOpts)
-	log.Printf("selector = %+v\n", selector)
-	fmt.Printf("selector.String() = %+v\n", selector.String())
 
 	list := &v1.ServiceList{}
 	if err := s.kubeClient.List(ctx, list, listOpts); err != nil {
