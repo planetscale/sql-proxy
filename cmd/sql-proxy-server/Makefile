@@ -13,8 +13,8 @@ endif
 COMMIT ?= $(shell git rev-parse HEAD)
 LDFLAGS ?= -X main.commit=${GITCOMMIT_LONG} -X main.gitTreeState=${GIT_TREE_STATE}
 
-.PHONY: build build-image push
-all: build build-image push
+.PHONY: build build-image push clean
+all: build build-image push clean
 
 .PHONY: build
 build:
@@ -33,3 +33,8 @@ push:
 	@docker tag ${REPO}/${NAME}:$(VERSION) ${REPO}/${NAME}:latest
 	@docker push ${REPO}/${NAME}:latest
 	@docker push ${REPO}/${NAME}:$(VERSION)
+
+.PHONY: clean
+clean:
+	@echo "==> Cleaning artifacts"
+	@rm ${NAME}
