@@ -351,11 +351,9 @@ func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (st
 
 	var port int32
 	for _, p := range svc.Spec.Ports {
-		log.Printf("p = %+v\n", p)
-		log.Printf("p.Name = %+v\n", p.Name)
-		// if p.Name == "mysql" {
-		p.Port = port
-		// }
+		if p.Name == "mysql" {
+			port = p.Port
+		}
 	}
 
 	if port == 0 {
