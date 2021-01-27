@@ -70,6 +70,10 @@ type Options struct {
 	// CertSource defines the certificate source to obtain the required TLS
 	// certificates for the client.
 	CertSource CertSource
+
+	// Logger defines which zap.Logger to use. Use it to override the default
+	// Development logger . Useful for tests.
+	Logger *zap.Logger
 }
 
 // NewClient creates a new proxy client instance
@@ -82,14 +86,18 @@ func NewClient(opts Options) (*Client, error) {
 		configCache: newtlsCache(),
 	}
 
-	logger, err := zap.NewDevelopment(
-		zap.Fields(zap.String("app", "sql-proxy-client")),
-	)
-	if err != nil {
-		return nil, err
+	if opts.Logger != nil {
+		c.log = opts.Logger
+	} else {
+		logger, err := zap.NewDevelopment(
+			zap.Fields(zap.String("app", "sql-proxy-client")),
+		)
+		if err != nil {
+			return nil, err
+		}
+		zap.ReplaceGlobals(logger)
+		c.log = logger
 	}
-	zap.ReplaceGlobals(logger)
-	c.log = logger
 
 	// cache the certs for the given instance(s)
 	go func() {

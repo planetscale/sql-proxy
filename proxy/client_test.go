@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"go.uber.org/zap/zaptest"
 	"golang.org/x/net/nettest"
 )
 
@@ -22,7 +23,7 @@ const (
 
 func TestClient_Run_Cancellation(t *testing.T) {
 	c := qt.New(t)
-	client, err := NewClient(testOptions())
+	client, err := NewClient(testOptions(t))
 	c.Assert(err, qt.IsNil)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -63,9 +64,9 @@ func TestClient_clientCerts(t *testing.T) {
 		},
 	}
 
-	client, err := NewClient(Options{
-		CertSource: certSource,
-	})
+	testOpts := testOptions(t)
+	testOpts.CertSource = certSource
+	client, err := NewClient(testOpts)
 	c.Assert(err, qt.IsNil)
 
 	cert, err := client.clientCerts(ctx, instance)
@@ -91,10 +92,11 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 		},
 	}
 
-	cfg := &tls.Config{ServerName: "server"}
-	client, err := NewClient(Options{})
+	testOpts := testOptions(t)
+	client, err := NewClient(testOpts)
 	c.Assert(err, qt.IsNil)
 
+	cfg := &tls.Config{ServerName: "server"}
 	client.configCache.Add(instance, cfg)
 
 	cert, err := client.clientCerts(ctx, instance)
@@ -129,11 +131,11 @@ func TestClient_run(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { remoteListener.Close() })
 
-	client, err := NewClient(Options{
-		Instance:   instance,
-		RemoteAddr: remoteListener.Addr().String(),
-		CertSource: certSource,
-	})
+	testOpts := testOptions(t)
+	testOpts.Instance = instance
+	testOpts.RemoteAddr = remoteListener.Addr().String()
+	testOpts.CertSource = certSource
+	client, err := NewClient(testOpts)
 	c.Assert(err, qt.IsNil)
 
 	// run the client proxy
@@ -220,8 +222,10 @@ func testCerts(t testing.TB) testCert {
 	}
 }
 
-func testOptions() Options {
-	return Options{}
+func testOptions(t *testing.T) Options {
+	return Options{
+		Logger: zaptest.NewLogger(t),
+	}
 }
 
 type fakeCertSource struct {
