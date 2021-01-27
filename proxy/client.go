@@ -124,7 +124,7 @@ func (c *Client) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error net.Listen: %w", err)
 	}
-	defer c.log.Sync() // flush log buffer
+	defer c.log.Sync() // nolint: errcheck
 
 	return c.run(ctx, l)
 }
