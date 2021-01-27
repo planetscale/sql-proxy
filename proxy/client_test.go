@@ -22,7 +22,8 @@ const (
 
 func TestClient_Run_Cancellation(t *testing.T) {
 	c := qt.New(t)
-	client := NewClient(testOptions())
+	client, err := NewClient(testOptions())
+	c.Assert(err, qt.IsNil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -62,9 +63,10 @@ func TestClient_clientCerts(t *testing.T) {
 		},
 	}
 
-	client := NewClient(Options{
+	client, err := NewClient(Options{
 		CertSource: certSource,
 	})
+	c.Assert(err, qt.IsNil)
 
 	cert, err := client.clientCerts(ctx, instance)
 	c.Assert(err, qt.IsNil)
@@ -90,7 +92,9 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 	}
 
 	cfg := &tls.Config{ServerName: "server"}
-	client := NewClient(Options{})
+	client, err := NewClient(Options{})
+	c.Assert(err, qt.IsNil)
+
 	client.configCache.Add(instance, cfg)
 
 	cert, err := client.clientCerts(ctx, instance)
@@ -125,11 +129,12 @@ func TestClient_run(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { remoteListener.Close() })
 
-	client := NewClient(Options{
+	client, err := NewClient(Options{
 		Instance:   instance,
 		RemoteAddr: remoteListener.Addr().String(),
 		CertSource: certSource,
 	})
+	c.Assert(err, qt.IsNil)
 
 	// run the client proxy
 	done := make(chan bool)

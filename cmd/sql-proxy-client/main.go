@@ -11,7 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
+	"os"
 	"syscall"
 
 	ps "github.com/planetscale/planetscale-go"
@@ -21,7 +21,8 @@ import (
 
 func main() {
 	if err := realMain(); err != nil {
-		log.Fatalln(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -56,25 +57,26 @@ func realMain() error {
 	}
 
 	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		log.Println("local certs are defined, disabling remote cert source and using local certificates")
 		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath)
 		if err != nil {
 			return err
 		}
 	}
 
-	p := proxy.NewClient(proxy.Options{
+	p, err := proxy.NewClient(proxy.Options{
 		CertSource: certSource,
 		LocalAddr:  *localAddr,
 		RemoteAddr: *remoteAddr,
 		Instance:   *instance,
 	})
+	if err != nil {
+		return fmt.Errorf("couldn't create proxy client: %s", err)
+	}
 
 	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
 	// https://go-review.googlesource.com/c/go/+/219640
 	ctx := sigutil.WithSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
-	log.Println("ready for new connections")
 	return p.Run(ctx)
 }
 

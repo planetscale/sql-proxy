@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/planetscale/sql-proxy/sigutil"
+	"go.uber.org/zap"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -49,6 +50,7 @@ type server struct {
 	cfg         *tls.Config
 	localAddr   string
 	backendAddr string
+	log         *zap.Logger
 
 	// k8s bits
 	kubeClient client.Client
@@ -61,7 +63,7 @@ type server struct {
 
 func main() {
 	if err := realMain(); err != nil {
-		log.Fatalln(err)
+		zap.L().Fatal("exiting sql-proxy-server", zap.Error(err))
 	}
 }
 
@@ -122,33 +124,45 @@ func realMain() error {
 	// https://go-review.googlesource.com/c/go/+/219640
 	ctx := sigutil.WithSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
+	logger, err := zap.NewProduction(
+		zap.Fields(zap.String("app", "sql-proxy-server")),
+	)
+	if err != nil {
+		return err
+	}
+	zap.ReplaceGlobals(logger)
+
 	srv := &server{
 		cfg:         cfg,
 		namespace:   *kubeNamespace,
 		localAddr:   *localAddr,
 		backendAddr: *backendAddr,
 		addrCache:   newAddrCache(),
+		log:         logger,
 	}
 
 	if *backendAddr != "" {
-		log.Printf("disabling kube client, using the provided backend addr: %s\n", *backendAddr)
+		srv.log.Info("disabling kube client, using the provided backend addressn",
+			zap.String("backend_addr", *backendAddr))
 		srv.backendAddr = *backendAddr
 	} else {
-		log.Printf("initalized kube client")
+		srv.log.Info("initalized kube client")
 		srv.kubeClient, err = newKubeClient()
 		if err != nil {
 			return err
 		}
 	}
 
-	log.Printf("ready for new connections [version: %q] [git tree state: %q]\n",
-		commit, gitTreeState)
+	srv.log.Info("ready for new connections",
+		zap.String("commit", commit),
+		zap.String("git_tree_state", gitTreeState),
+		zap.String("local_addr", srv.localAddr),
+	)
 	return srv.Run(ctx)
 }
 
 // Run runs the server proxy
 func (s *server) Run(ctx context.Context) error {
-	log.Printf("listening on %s", s.localAddr)
 	l, err := net.Listen("tcp", s.localAddr)
 	if err != nil {
 		return err
@@ -165,7 +179,8 @@ func (s *server) run(ctx context.Context, l net.Listener) error {
 		select {
 		case <-ctx.Done():
 			termTimeout := time.Second * 1
-			log.Printf("received context cancellation. Waiting up to %s before terminating.", termTimeout)
+			s.log.Info("received context cancellation, waiting until timeout",
+				zap.Duration("timeout", termTimeout))
 			return nil
 		default:
 			c, err := l.Accept()
@@ -176,7 +191,7 @@ func (s *server) run(ctx context.Context, l net.Listener) error {
 
 			go func() {
 				if err := s.handleConn(ctx, c); err != nil {
-					log.Printf("error proxying conn: %s", err)
+					s.log.Error("error proxying conns", zap.Error(err))
 				}
 			}()
 		}
@@ -196,7 +211,7 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	}
 
 	cn := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
-	log.Printf("new connection received for with CN: %q", cn)
+	s.log.Info("new connection received with CN", zap.String("common_name", cn))
 
 	st := strings.Split(cn, "/")
 	if len(st) != 3 {
@@ -240,7 +255,8 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 		select {
 		case firstErr <- err:
 			if readErr && err == io.EOF {
-				log.Printf("client closed %v", localDesc)
+				zap.L().Info("client closed connection",
+					zap.String("local_desc", localDesc))
 			} else {
 				logError(localDesc, remoteDesc, readErr, err)
 			}
@@ -254,7 +270,8 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 	select {
 	case firstErr <- err:
 		if readErr && err == io.EOF {
-			log.Printf("instance %v closed connection", remoteDesc)
+			zap.L().Info("instance closed connection",
+				zap.String("remote_desc", remoteDesc))
 		} else {
 			logError(remoteDesc, localDesc, readErr, err)
 		}
@@ -294,7 +311,7 @@ func logError(readDesc, writeDesc string, readErr bool, err error) {
 	} else {
 		desc = "writing data to " + writeDesc
 	}
-	log.Printf("%v had error: %v", desc, err)
+	zap.L().Error("copy error", zap.String("desc", desc), zap.Error(err))
 }
 
 func newKubeClient() (client.Client, error) {
