@@ -14,7 +14,7 @@ import (
 	"os"
 	"syscall"
 
-	ps "github.com/planetscale/planetscale-go"
+	ps "github.com/planetscale/planetscale-go/planetscale"
 	"github.com/planetscale/sql-proxy/proxy"
 	"github.com/planetscale/sql-proxy/sigutil"
 )
