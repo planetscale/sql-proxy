@@ -76,7 +76,7 @@ func realMain() error {
 	// otherwise via kubernetes services. Useful for manual testing.
 	backendAddr := flag.String("backend-addr", "", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
-	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
+	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which the target vtgate Services are deployed.")
 
 	flag.Parse()
 
