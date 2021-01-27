@@ -6,11 +6,12 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -41,6 +42,8 @@ type Client struct {
 	maxConnections uint64
 	certSource     CertSource
 
+	log *zap.Logger
+
 	// connectionsCounter is used to enforce the optional maxConnections limit
 	connectionsCounter uint64
 
@@ -67,10 +70,14 @@ type Options struct {
 	// CertSource defines the certificate source to obtain the required TLS
 	// certificates for the client.
 	CertSource CertSource
+
+	// Logger defines which zap.Logger to use. Use it to override the default
+	// Development logger . Useful for tests.
+	Logger *zap.Logger
 }
 
 // NewClient creates a new proxy client instance
-func NewClient(opts Options) *Client {
+func NewClient(opts Options) (*Client, error) {
 	c := &Client{
 		certSource:  opts.CertSource,
 		localAddr:   opts.LocalAddr,
@@ -79,15 +86,28 @@ func NewClient(opts Options) *Client {
 		configCache: newtlsCache(),
 	}
 
+	if opts.Logger != nil {
+		c.log = opts.Logger
+	} else {
+		logger, err := zap.NewDevelopment(
+			zap.Fields(zap.String("app", "sql-proxy-client")),
+		)
+		if err != nil {
+			return nil, err
+		}
+		zap.ReplaceGlobals(logger)
+		c.log = logger
+	}
+
 	// cache the certs for the given instance(s)
 	go func() {
 		_, err := c.clientCerts(context.Background(), opts.Instance)
 		if err != nil {
-			log.Println("couldn't retrieve TLS certificate for the client")
+			c.log.Error("couldn't retrieve TLS certificate for the client", zap.Error(err))
 		}
 	}()
 
-	return c
+	return c, nil
 }
 
 // Conn represents a connection from a client to a specific instance.
@@ -99,10 +119,12 @@ type Conn struct {
 // Run runs the proxy. It listens to the configured localhost address and
 // proxies the connection over a TLS tunnel to the remote DB instance.
 func (c *Client) Run(ctx context.Context) error {
+	c.log.Info("ready for new connections")
 	l, err := net.Listen("tcp", c.localAddr)
 	if err != nil {
-		return fmt.Errorf("error net.Listen: %s", err)
+		return fmt.Errorf("error net.Listen: %w", err)
 	}
+	defer c.log.Sync() // nolint: errcheck
 
 	return c.run(ctx, l)
 }
@@ -113,7 +135,7 @@ func (c *Client) run(ctx context.Context, l net.Listener) error {
 	connSrc := make(chan Conn, 1)
 	go func() {
 		if err := c.listen(l, connSrc); err != nil {
-			log.Printf("listen error: %s", err)
+			c.log.Error("listen to local address", zap.Error(err))
 		}
 	}()
 
@@ -121,7 +143,8 @@ func (c *Client) run(ctx context.Context, l net.Listener) error {
 		select {
 		case <-ctx.Done():
 			termTimeout := time.Second * 1
-			log.Printf("received context cancellation. Waiting up to %s before terminating.", termTimeout)
+			c.log.Info("received context cancellation, waiting until timeout",
+				zap.Duration("timeout", termTimeout))
 
 			err := c.Shutdown(termTimeout)
 			if err != nil {
@@ -133,7 +156,7 @@ func (c *Client) run(ctx context.Context, l net.Listener) error {
 				// TODO(fatih): detach context from parent
 				err := c.handleConn(ctx, lc.Conn, lc.Instance)
 				if err != nil {
-					log.Printf("error proxying conn: %s", err)
+					c.log.Error("error proxying conns", zap.Error(err))
 				}
 			}(conn)
 		}
@@ -143,7 +166,10 @@ func (c *Client) run(ctx context.Context, l net.Listener) error {
 // listen listens to the client's localAddres and sends each incoming
 // connections to the given connSrc channel.
 func (c *Client) listen(l net.Listener, connSrc chan<- Conn) error {
-	log.Printf("listening on %q for remote DB instance %q", c.localAddr, c.instance)
+	c.log.Info("listening remote DB instance",
+		zap.String("local_addr", c.localAddr),
+		zap.String("instance", c.instance),
+	)
 
 	for {
 		start := time.Now()
@@ -158,10 +184,10 @@ func (c *Client) listen(l net.Listener, connSrc chan<- Conn) error {
 			}
 			l.Close()
 
-			return fmt.Errorf("error in accept for on %v: %v", c.localAddr, err)
+			return fmt.Errorf("error in accept for on %v: %w", c.localAddr, err)
 		}
 
-		log.Printf("new connection for %q", l.Addr().String())
+		c.log.Info("new connection", zap.String("conn_addr", l.Addr().String()))
 
 		switch clientConn := conn.(type) {
 		case *net.TCPConn:
@@ -177,6 +203,7 @@ func (c *Client) listen(l net.Listener, connSrc chan<- Conn) error {
 }
 
 func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string) error {
+	log := c.log.With(zap.String("instance", instance))
 	active := atomic.AddUint64(&c.connectionsCounter, 1)
 
 	// Deferred decrement of ConnectionsCounter upon connection closing
@@ -209,12 +236,12 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 
 	if s, ok := conn.(setKeepAliver); ok {
 		if err := s.SetKeepAlive(true); err != nil {
-			log.Printf("couldn't set KeepAlive to true: %v", err)
+			log.Error("couldn't set KeepAlive to true", zap.Error(err))
 		} else if err := s.SetKeepAlivePeriod(keepAlivePeriod); err != nil {
-			log.Printf("couldn't set KeepAlivePeriod to %v", keepAlivePeriod)
+			log.Error("couldn't set KeepAlivePeriod", zap.Error(err), zap.Duration("keep_alive_period", keepAlivePeriod))
 		}
 	} else {
-		log.Printf("KeepAlive not supported: long-running tcp connections may be killed by the OS.")
+		log.Warn("KeepAlive not supported: long-running tcp connections may be killed by the OS.")
 	}
 
 	secureConn := tls.Client(remoteConn, cfg)
@@ -238,7 +265,7 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config, error) {
 	cfg, err := c.configCache.Get(instance)
 	if err == nil {
-		log.Println("using tls.Config from the cache")
+		c.log.Info("using tls.Config from the cache", zap.String("instance", instance))
 		return cfg, nil
 	}
 
@@ -287,7 +314,7 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 		},
 	}
 
-	log.Println("adding tls.Config to the cache")
+	c.log.Info("adding tls.Config to the cache", zap.String("instance", instance))
 	c.configCache.Add(instance, cfg)
 	return cfg, nil
 }
@@ -305,7 +332,7 @@ func (c *Client) Shutdown(timeout time.Duration) error {
 			if atomic.LoadUint64(&c.connectionsCounter) > 0 {
 				continue
 			}
-			log.Println("no connections to wait, bailing out")
+			c.log.Info("no connections to wait, bailing out")
 		case <-term:
 		}
 		break
@@ -326,7 +353,8 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 		select {
 		case firstErr <- err:
 			if readErr && err == io.EOF {
-				log.Printf("client closed %v", localDesc)
+				zap.L().Info("client closed connection",
+					zap.String("local_desc", localDesc))
 			} else {
 				logError(localDesc, remoteDesc, readErr, err)
 			}
@@ -340,7 +368,8 @@ func copyThenClose(remote, local io.ReadWriteCloser, remoteDesc, localDesc strin
 	select {
 	case firstErr <- err:
 		if readErr && err == io.EOF {
-			log.Printf("instance %v closed connection", remoteDesc)
+			zap.L().Info("instance closed connection",
+				zap.String("remote_desc", remoteDesc))
 		} else {
 			logError(remoteDesc, localDesc, readErr, err)
 		}
@@ -359,7 +388,7 @@ func logError(readDesc, writeDesc string, readErr bool, err error) {
 	} else {
 		desc = "writing data to " + writeDesc
 	}
-	log.Printf("%v had error: %v", desc, err)
+	zap.L().Error("copy error", zap.String("desc", desc), zap.Error(err))
 }
 
 // myCopy is similar to io.Copy, but reports whether the returned error was due
