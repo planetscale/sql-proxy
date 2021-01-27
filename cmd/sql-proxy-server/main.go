@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,11 +32,17 @@ const (
 	databaseBranchCollectionNameLabel = "database-branch-collection-name"
 	databaseBranchNameLabel           = "database-branch-name"
 	psComponentLabel                  = "planetscale.com/component"
+
+	// expireTTL defines the time a kubernetes service address expires in the
+	// cache.
+	expireTTL = 1 * time.Minute
 )
 
 var (
 	commit       string
 	gitTreeState string
+
+	errAddrNotFound = errors.New("remote address not found")
 )
 
 type server struct {
@@ -46,6 +53,10 @@ type server struct {
 	// k8s bits
 	kubeClient client.Client
 	namespace  string
+
+	// svcCache contains the vtgate address cache for each individual
+	// org/db/branch combination
+	addrCache *addrCache
 }
 
 func main() {
@@ -59,8 +70,8 @@ func realMain() error {
 	serverCertPath := flag.String("cert-file", "", "MySQL server Cert path")
 	serverKeyPath := flag.String("key-file", "", "MySQL server Key path")
 
-	// backendAddr is used to manually override the routing via kubernetes
-	// service. Useful for manual testing.
+	// backendAddr is used to manually override the routing that is done
+	// otherwise via kubernetes services. Useful for manual testing.
 	backendAddr := flag.String("backend-addr", "", "MySQL backend network address")
 	localAddr := flag.String("local-addr", "127.0.0.1:3308", "Local address to bind and listen")
 	kubeNamespace := flag.String("kube-namespace", "default", "Namespace in which to deploy resources in Kubernetes.")
@@ -116,6 +127,7 @@ func realMain() error {
 		namespace:   *kubeNamespace,
 		localAddr:   *localAddr,
 		backendAddr: *backendAddr,
+		addrCache:   newAddrCache(),
 	}
 
 	if *backendAddr != "" {
@@ -206,7 +218,14 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	var d net.Dialer
 	backendConn, err := d.DialContext(ctx, "tcp", vtgateAddr) // mysql instance
 	if err != nil {
+		tlsConn.Close()
 		return fmt.Errorf("couldn't connect to backend: %s", err)
+	}
+
+	switch c := backendConn.(type) {
+	case *net.TCPConn:
+		c.SetKeepAlive(true)                  //nolint: errcheck
+		c.SetKeepAlivePeriod(1 * time.Minute) //nolint: errcheck
 	}
 
 	copyThenClose(backendConn, tlsConn, "remote conn", "local conn on "+vtgateAddr)
@@ -316,6 +335,12 @@ func newKubeClient() (client.Client, error) {
 }
 
 func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (string, error) {
+	addr, err := s.addrCache.Get("")
+	if err == nil {
+		log.Println("using address from the cache")
+		return addr, nil
+	}
+
 	selector := labels.Set{
 		organizationNameLabel:             org,
 		databaseBranchCollectionNameLabel: db,
@@ -356,5 +381,66 @@ func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (st
 		return "", errors.New("couldn't find a service port named 'mysql'")
 	}
 
-	return fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port), nil
+	addr = fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port)
+	s.addrCache.Add("", addr)
+
+	return addr, nil
+}
+
+type cacheEntry struct {
+	// addr defines the vtgate/remote addr the proxy will connect
+	addr string
+
+	// added holds the time the address was added to the cache
+	added time.Time
+}
+
+type addrCache struct {
+	// addrs holds the remote addresses for each odb id.
+	addrs   map[string]cacheEntry
+	addrsMu sync.Mutex // protects addrs
+
+	// nowFn returns the current local time, used during insertion of cache
+	// entries. It's a function so we can use it for tests.
+	nowFn func() time.Time
+}
+
+func newAddrCache() *addrCache {
+	return &addrCache{
+		addrs: make(map[string]cacheEntry),
+		nowFn: time.Now,
+	}
+}
+
+// Add adds the given addr for the given instance name
+func (a *addrCache) Add(instance, addr string) {
+	a.addrsMu.Lock()
+	defer a.addrsMu.Unlock()
+
+	a.addrs[instance] = cacheEntry{
+		addr:  addr,
+		added: a.nowFn(),
+	}
+}
+
+// Get retrieves the address for the given instance
+func (a *addrCache) Get(instance string) (string, error) {
+	a.addrsMu.Lock()
+	defer a.addrsMu.Unlock()
+
+	e, ok := a.addrs[instance]
+	if !ok {
+		return "", errAddrNotFound
+	}
+
+	now := time.Now()
+
+	// delete the address if it's expired. This will trigger at the end our
+	// kubeclient to make another lookup to get the Service address.
+	if e.added.Add(expireTTL).Before(now) {
+		delete(a.addrs, instance)
+		return "", errAddrNotFound
+	}
+
+	return e.addr, nil
 }
