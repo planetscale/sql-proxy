@@ -26,6 +26,7 @@ spec:
           - "-cert-file=/secrets/certs/cert.pem"
           - "-key-file=/secrets/certs/key.pem"
           - "-local-addr=0.0.0.0:3308"
+          - "-kube-namespace=user-data"
         volumeMounts:
         - name: tls-certs
           mountPath: /secrets/certs
@@ -40,13 +41,14 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: sql-proxy-server
+  namespace: default
 
 ---
 
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: sql-proxy-server-role
+  name: sql-proxy-server
 rules:
   - apiGroups: [""]
     resources: ["services"]
@@ -54,14 +56,15 @@ rules:
 
 ---
 
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: sql-proxy-server-binding
+  name: sql-proxy-server
 subjects:
   - kind: ServiceAccount
     name: sql-proxy-server
+    namespace: default
 roleRef:
-  kind: Role
-  name: sql-proxy-server-role
+  kind: ClusterRole
+  name: sql-proxy-server
   apiGroup: rbac.authorization.k8s.io
