@@ -214,7 +214,7 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 					zap.String("remote_addr", c.RemoteAddr().String()),
 				)
 			}
-			// non-TLS clients, such as healt-checks will end here, don't
+			// non-TLS clients, such as health-checks will end here, don't
 			// return an error
 			return nil
 		}
