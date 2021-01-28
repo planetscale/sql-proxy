@@ -207,6 +207,19 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	// ConnectionState, which is only populated after a successfull
 	// handshake
 	if err := tlsConn.Handshake(); err != nil {
+		tlsConn.Close()
+
+		if err == io.EOF {
+			if c, ok := conn.(*net.TCPConn); ok {
+				s.log.Debug("io EOF error",
+					zap.String("remote_addr", c.RemoteAddr().String()),
+				)
+			}
+			// non-TLS clients, such as healt-checks will end here, don't
+			// return an error
+			return nil
+		}
+
 		return fmt.Errorf("couldn't establish a TLS handshake: %s", err)
 	}
 
