@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -365,9 +364,11 @@ func newKubeClient() (client.Client, error) {
 }
 
 func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (string, error) {
-	addr, err := s.addrCache.Get("")
+	odb := fmt.Sprintf("%s/%s/%s", org, db, branch)
+
+	addr, err := s.addrCache.Get(odb)
 	if err == nil {
-		log.Println("using address from the cache")
+		s.log.Info("using address from the cache", zap.String("odb", odb))
 		return addr, nil
 	}
 
@@ -412,7 +413,7 @@ func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (st
 	}
 
 	addr = fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port)
-	s.addrCache.Add("", addr)
+	s.addrCache.Add(odb, addr)
 
 	return addr, nil
 }
