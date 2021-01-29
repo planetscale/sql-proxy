@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -207,6 +206,19 @@ func (s *server) handleConn(ctx context.Context, conn net.Conn) error {
 	// ConnectionState, which is only populated after a successfull
 	// handshake
 	if err := tlsConn.Handshake(); err != nil {
+		tlsConn.Close()
+
+		if err == io.EOF {
+			if c, ok := conn.(*net.TCPConn); ok {
+				s.log.Debug("io EOF error",
+					zap.String("remote_addr", c.RemoteAddr().String()),
+				)
+			}
+			// non-TLS clients, such as health-checks will end here, don't
+			// return an error
+			return nil
+		}
+
 		return fmt.Errorf("couldn't establish a TLS handshake: %s", err)
 	}
 
@@ -352,9 +364,11 @@ func newKubeClient() (client.Client, error) {
 }
 
 func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (string, error) {
-	addr, err := s.addrCache.Get("")
+	odb := fmt.Sprintf("%s/%s/%s", org, db, branch)
+
+	addr, err := s.addrCache.Get(odb)
 	if err == nil {
-		log.Println("using address from the cache")
+		s.log.Info("using address from the cache", zap.String("odb", odb))
 		return addr, nil
 	}
 
@@ -399,7 +413,7 @@ func (s *server) getServiceAddr(ctx context.Context, org, db, branch string) (st
 	}
 
 	addr = fmt.Sprintf("%s:%d", svc.Spec.ClusterIP, port)
-	s.addrCache.Add("", addr)
+	s.addrCache.Add(odb, addr)
 
 	return addr, nil
 }
