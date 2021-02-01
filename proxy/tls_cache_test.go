@@ -15,22 +15,24 @@ func TestTLSCache_Retrieve(t *testing.T) {
 
 	instance := "foo"
 	cfg := &tls.Config{ServerName: "server"}
+	remoteAddr := "foo.example.com:3306"
 
-	cache.Add(instance, cfg)
+	cache.Add(instance, cfg, remoteAddr)
 	c.Assert(cache.configs, qt.HasLen, 1)
 
-	gotCfg, err := cache.Get(instance)
+	entry, err := cache.Get(instance)
 	c.Assert(err, qt.IsNil)
-	c.Assert(gotCfg, qt.CmpEquals(cmpopts.IgnoreUnexported(tls.Config{})), cfg)
+	c.Assert(entry.cfg, qt.CmpEquals(cmpopts.IgnoreUnexported(tls.Config{})), cfg)
+	c.Assert(entry.remoteAddr, qt.Equals, remoteAddr)
 }
 
 func TestTLSCache_NotFound(t *testing.T) {
 	c := qt.New(t)
 	cache := newtlsCache()
 
-	cfg, err := cache.Get("wrong-name")
+	entry, err := cache.Get("wrong-name")
 	c.Assert(err, qt.Not(qt.IsNil))
-	c.Assert(cfg, qt.IsNil)
+	c.Assert(entry, qt.Equals, cacheEntry{})
 	c.Assert(err, qt.Equals, errConfigNotFound)
 }
 
@@ -44,12 +46,13 @@ func TestTLSCache_Expired(t *testing.T) {
 
 	instance := "foo"
 	cfg := &tls.Config{ServerName: "server"}
+	remoteAddr := "foo.example.com:3306"
 
-	cache.Add(instance, cfg)
+	cache.Add(instance, cfg, remoteAddr)
 
-	cfg, err := cache.Get("foo")
+	entry, err := cache.Get("foo")
 	c.Assert(err, qt.Not(qt.IsNil))
-	c.Assert(cfg, qt.IsNil)
+	c.Assert(entry, qt.Equals, cacheEntry{})
 
 	// we'll get this because expired keys are removed from the cache
 	c.Assert(err, qt.Equals, errConfigNotFound)

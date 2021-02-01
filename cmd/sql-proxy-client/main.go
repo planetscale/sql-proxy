@@ -29,7 +29,7 @@ func main() {
 func realMain() error {
 	localAddr := flag.String("local-addr", "127.0.0.1:3307",
 		"Local address to bind and listen for connections")
-	remoteAddr := flag.String("remote-addr", "127.0.0.1:3308",
+	remoteAddr := flag.String("remote-addr", "",
 		"MySQL remote network address")
 	instance := flag.String("instance", "",
 		"The PlanetScale Database instance in the form of organization/database/branch")
@@ -116,6 +116,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 	return &proxy.Cert{
 		ClientCert: cert.ClientCert,
 		CACert:     cert.CACert,
+		RemoteAddr: cert.RemoteAddr,
 	}, nil
 }
 
