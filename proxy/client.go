@@ -100,12 +100,10 @@ func NewClient(opts Options) (*Client, error) {
 	}
 
 	// cache the certs for the given instance(s)
-	go func() {
-		_, err := c.clientCerts(context.Background(), opts.Instance)
-		if err != nil {
-			c.log.Error("couldn't retrieve TLS certificate for the client", zap.Error(err))
-		}
-	}()
+	_, err := c.clientCerts(context.Background(), opts.Instance)
+	if err != nil {
+		c.log.Error("couldn't retrieve TLS certificate for the client", zap.Error(err))
+	}
 
 	return c, nil
 }
