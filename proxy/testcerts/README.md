@@ -31,7 +31,7 @@ Create client private and public keys:
 openssl genrsa -out client.key 2048
 
 # signed public key with a csr
-openssl req -new -key client.key -subj '/CN=my-client' -out client.csr
+openssl req -new -key client.key -subj '/CN=myorg\/mydb\/mybranch' -out client.csr
 openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 365 -out client.crt
 
 # inspect
