@@ -57,7 +57,7 @@ func realMain() error {
 	}
 
 	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath)
+		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath, *remoteAddr)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 	}, nil
 }
 
-func newLocalCertSource(caPath, certPath, keyPath string) (*localCertSource, error) {
+func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string) (*localCertSource, error) {
 	pem, err := ioutil.ReadFile(caPath)
 	if err != nil {
 		return nil, err
@@ -138,21 +138,24 @@ func newLocalCertSource(caPath, certPath, keyPath string) (*localCertSource, err
 	cert.Leaf = caCert
 
 	return &localCertSource{
-		cert:   cert,
-		caCert: caCert,
+		cert:       cert,
+		caCert:     caCert,
+		remoteAddr: remoteAddr,
 	}, nil
 
 }
 
 type localCertSource struct {
-	cert   tls.Certificate
-	caCert *x509.Certificate
+	cert       tls.Certificate
+	caCert     *x509.Certificate
+	remoteAddr string
 }
 
 func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
 	return &proxy.Cert{
 		ClientCert: c.cert,
 		CACert:     c.caCert,
+		RemoteAddr: c.remoteAddr,
 	}, nil
 }
 
