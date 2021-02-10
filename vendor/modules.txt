@@ -12,7 +12,7 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/hashicorp/go-cleanhttp v0.5.1
+# github.com/hashicorp/go-cleanhttp v0.5.2
 github.com/hashicorp/go-cleanhttp
 # github.com/kr/pretty v0.2.1
 github.com/kr/pretty
@@ -20,7 +20,7 @@ github.com/kr/pretty
 github.com/kr/text
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/planetscale/planetscale-go v0.7.0
+# github.com/planetscale/planetscale-go v0.8.0
 ## explicit
 github.com/planetscale/planetscale-go/planetscale
 # github.com/stretchr/testify v1.6.1
