@@ -1,0 +1,54 @@
+project_name: pscale-proxy
+release:
+  prerelease: auto # don't publish release with -rc1,-pre, etc suffixes
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    main: ./cmd/sql-proxy-client/main.go
+    ldflags:
+     - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    binary: "pscale-proxy"   
+nfpms:
+  - maintainer: PlanetScale
+    description: The PlanetScale SQL Proxy
+    homepage: https://github.com/planetscale/sql-proxy
+    license: Apache 2.0
+    formats:
+    - deb
+    - rpm
+    replacements:
+      darwin: macOS
+brews:
+  - homepage: "https://planetscale.com/"
+    description: "The PlanetScale SQL Proxy"
+    name: "pscale-proxy"
+    license: Apache 2.0
+    tap: 
+      owner: planetscale
+      name: homebrew-tap
+    # TODO: remove this once we make the repo public      
+    download_strategy: GitHubPrivateRepositoryReleaseDownloadStrategy
+    custom_require: "../custom_download_strategy"
+    folder: Formula
+    test: |
+         system "#{bin}/pscale-proxy --version"
+    install: |
+      bin.install "pscale-proxy"
+archives:
+  - replacements:
+      darwin: macOS
+    format_overrides:
+      - goos: windows
+        format: zip
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

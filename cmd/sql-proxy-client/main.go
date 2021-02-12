@@ -12,11 +12,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"syscall"
 
 	ps "github.com/planetscale/planetscale-go/planetscale"
 	"github.com/planetscale/sql-proxy/proxy"
 	"github.com/planetscale/sql-proxy/sigutil"
+)
+
+var (
+	version string
+	commit  string
+	date    string
 )
 
 func main() {
@@ -34,12 +41,19 @@ func realMain() error {
 	instance := flag.String("instance", "",
 		"The PlanetScale Database instance in the form of organization/database/branch")
 	token := flag.String("token", "", "The PlanetScale API token")
+	showVersion := flag.Bool("version", false, "Show version of the proxy")
 
 	caPath := flag.String("ca", "", "MySQL CA Cert path")
 	clientCertPath := flag.String("cert", "", "MySQL Client Cert path")
 	clientKeyPath := flag.String("key", "", "MySQL Client Key path")
 
 	flag.Parse()
+
+	if *showVersion {
+		printVersion(version, commit, date)
+		return nil
+	}
+
 	if *token == "" {
 		return errors.New("--token is not set. Please provide a PlanetScale API token")
 	}
@@ -165,4 +179,15 @@ func parseCert(pemCert []byte) (*x509.Certificate, error) {
 		return nil, errors.New("invalid PEM: " + string(pemCert))
 	}
 	return x509.ParseCertificate(bl.Bytes)
+}
+
+// printVersion formats a version string with the given information.
+func printVersion(ver, commit, buildDate string) {
+	if ver == "" && buildDate == "" && commit == "" {
+		fmt.Print("pscale version (built from source)")
+	}
+
+	ver = strings.TrimPrefix(ver, "v")
+
+	fmt.Printf("pscale version %s (build date: %s commit: %s)\n", ver, buildDate, commit)
 }
