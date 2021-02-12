@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -134,6 +135,9 @@ func (c *Client) Run(ctx context.Context) error {
 func (c *Client) getListener() (net.Listener, error) {
 	if strings.HasPrefix(c.localAddr, "unix://") {
 		p := strings.TrimPrefix(c.localAddr, "unix://")
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to remove unix domain socket file %s, error: %s", p, err)
+		}
 		return net.Listen("unix", p)
 	}
 	return net.Listen("tcp", c.localAddr)
