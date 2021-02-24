@@ -20,7 +20,7 @@ github.com/kr/pretty
 github.com/kr/text
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/planetscale/planetscale-go v0.8.0
+# github.com/planetscale/planetscale-go v0.9.0
 ## explicit
 github.com/planetscale/planetscale-go/planetscale
 # github.com/stretchr/testify v1.6.1
