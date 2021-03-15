@@ -11,6 +11,7 @@ import (
 	"net"
 	"path/filepath"
 	"testing"
+	"unsafe"
 
 	qt "github.com/frankban/quicktest"
 	"go.uber.org/zap/zaptest"
@@ -180,6 +181,17 @@ func TestClient_run(t *testing.T) {
 
 	// wait until we have read the message on the remote listener
 	<-done
+}
+
+func TestClient_SyncAtomicAlignment(t *testing.T) {
+	c := qt.New(t)
+
+	// copied from: https://github.com/GoogleCloudPlatform/cloudsql-proxy/blob/302d5d87ac52d8b814625f7b27344fd9ba6a0348/proxy/proxy/client_test.go#L290
+	// The sync/atomic pkg has a bug that requires the developer to guarantee
+	// 64-bit alignment when using 64-bit functions on 32-bit systems.
+	client := &Client{} //nolint: staticcheck
+	offset := unsafe.Offsetof(client.connectionsCounter)
+	c.Assert(int(offset%64), qt.Equals, 0, qt.Commentf("Client.connectionsCounter is not aligned"))
 }
 
 type testCert struct {
