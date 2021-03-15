@@ -264,7 +264,7 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 		remoteAddr = c.remoteAddr
 	}
 
-	c.log.Info("conneting to remote server", zap.String("remote_addr", remoteAddr))
+	c.log.Info("connecting to remote server", zap.String("remote_addr", remoteAddr))
 
 	var d net.Dialer
 	remoteConn, err := d.DialContext(ctx, "tcp", remoteAddr)
