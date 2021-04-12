@@ -49,8 +49,8 @@ func TestClient_clientCerts(t *testing.T) {
 	caCert := &x509.Certificate{
 		RawSubject: []byte("a-subject"),
 	}
-	remoteAddr := "foo.example.com:3306"
-
+	remoteAddr := "foo.example.com"
+	wantRemoteAddr := "mybranch.mydb.myorg.foo.example.com:3306"
 	org, db, branch := "myorg", "mydb", "mybranch"
 	instance := fmt.Sprintf("%s/%s/%s", org, db, branch)
 
@@ -63,6 +63,9 @@ func TestClient_clientCerts(t *testing.T) {
 				ClientCert: clientCert,
 				CACert:     caCert,
 				RemoteAddr: remoteAddr,
+				Ports: RemotePorts{
+					Proxy: 3306,
+				},
 			}, nil
 		},
 	}
@@ -77,7 +80,7 @@ func TestClient_clientCerts(t *testing.T) {
 	c.Assert(certSource.CertFnInvoked, qt.IsTrue)
 	c.Assert(cert.Certificates, qt.HasLen, 1)
 	c.Assert(cert.Certificates[0], qt.DeepEquals, clientCert)
-	c.Assert(addr, qt.Equals, remoteAddr)
+	c.Assert(addr, qt.Equals, wantRemoteAddr)
 
 	c.Assert(cert.RootCAs.Subjects(), qt.HasLen, 1)
 	c.Assert(cert.RootCAs.Subjects()[0], qt.DeepEquals, caCert.RawSubject)
@@ -101,7 +104,7 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	cfg := &tls.Config{ServerName: "server"}
-	remoteAddr := "foo.example.com:3306"
+	remoteAddr := "foo.example.com"
 	client.configCache.Add(instance, cfg, remoteAddr)
 
 	cert, addr, err := client.clientCerts(ctx, instance)
