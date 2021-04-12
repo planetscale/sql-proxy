@@ -330,8 +330,10 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 	rootCertPool := x509.NewCertPool()
 	rootCertPool.AddCert(cert.CACert)
 
+	serverName := fmt.Sprintf("%s.%s.%s.%s", s[0], s[1], s[2], cert.RemoteAddr)
+
 	cfg := &tls.Config{
-		ServerName:   instance,
+		ServerName:   serverName,
 		Certificates: []tls.Certificate{cert.ClientCert},
 		RootCAs:      rootCertPool,
 		// Set InsecureSkipVerify to skip the default validation we are
