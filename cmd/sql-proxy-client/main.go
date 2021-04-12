@@ -38,6 +38,7 @@ func realMain() error {
 		"Local address to bind and listen for connections")
 	remoteAddr := flag.String("remote-addr", "",
 		"MySQL remote network address")
+	remotePort := flag.Int("remote-port", 3307, "MySQL remote port")
 	instance := flag.String("instance", "",
 		"The PlanetScale Database instance in the form of organization/database/branch")
 	token := flag.String("token", "", "The PlanetScale API token")
@@ -71,7 +72,7 @@ func realMain() error {
 	}
 
 	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath, *remoteAddr)
+		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath, *remoteAddr, *remotePort)
 		if err != nil {
 			return err
 		}
@@ -134,7 +135,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 	}, nil
 }
 
-func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string) (*localCertSource, error) {
+func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort int) (*localCertSource, error) {
 	pem, err := ioutil.ReadFile(caPath)
 	if err != nil {
 		return nil, err
@@ -155,6 +156,7 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string) (*localCer
 		cert:       cert,
 		caCert:     caCert,
 		remoteAddr: remoteAddr,
+		remotePort: remotePort,
 	}, nil
 
 }
@@ -163,6 +165,7 @@ type localCertSource struct {
 	cert       tls.Certificate
 	caCert     *x509.Certificate
 	remoteAddr string
+	remotePort int
 }
 
 func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
@@ -170,6 +173,9 @@ func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*pr
 		ClientCert: c.cert,
 		CACert:     c.caCert,
 		RemoteAddr: c.remoteAddr,
+		Ports: proxy.RemotePorts{
+			Proxy: c.remotePort,
+		},
 	}, nil
 }
 
