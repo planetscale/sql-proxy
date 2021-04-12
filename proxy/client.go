@@ -369,7 +369,7 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 	}
 
 	c.log.Info("adding tls.Config to the cache", zap.String("instance", instance))
-	c.configCache.Add(instance, cfg, cert.RemoteAddr)
+	c.configCache.Add(instance, cfg, fullAddr)
 	return cfg, fullAddr, nil
 }
 
