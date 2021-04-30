@@ -6,7 +6,7 @@ require (
 	github.com/frankban/quicktest v1.12.1
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/google/go-cmp v0.5.5
-	github.com/planetscale/planetscale-go v0.22.1
+	github.com/planetscale/planetscale-go v0.23.0
 	github.com/stretchr/testify v1.6.1 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
