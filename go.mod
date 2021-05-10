@@ -3,7 +3,7 @@ module github.com/planetscale/sql-proxy
 go 1.15
 
 require (
-	github.com/frankban/quicktest v1.12.1
+	github.com/frankban/quicktest v1.13.0
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/google/go-cmp v0.5.5
 	github.com/planetscale/planetscale-go v0.24.0
