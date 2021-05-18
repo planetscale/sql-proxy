@@ -30,9 +30,6 @@ brews:
     tap: 
       owner: planetscale
       name: homebrew-tap
-    # TODO: remove this once we make the repo public      
-    download_strategy: GitHubPrivateRepositoryReleaseDownloadStrategy
-    custom_require: "../custom_download_strategy"
     folder: Formula
     test: |
          system "#{bin}/pscale-proxy --version"
