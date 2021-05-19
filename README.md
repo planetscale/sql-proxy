@@ -1,4 +1,4 @@
-# sql-proxy
+# sql-proxy [![Build status](https://badge.buildkite.com/ca3f602492e4918255dec82c84067f2bb2349d4a4cb85600fe.svg?branch=main)](https://buildkite.com/planetscale/sql-proxy)
 
 The SQL Proxy allows a user with the appropriate permissions to connect to a
 PlanetScale database without having to deal with IP whitelisting or SSL
