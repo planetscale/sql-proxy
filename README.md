@@ -30,10 +30,10 @@ Authenticate with [`pscale`](https://github.com/planetscale/cli):
 pscale auth login
 ```
 
-Run the proxy by passing the `organization/database/branch` combination you want to connect:
+Run the proxy by passing your organization, database and the branch you want to connect:
 
 ```
-sql-proxy-client --token "$(cat ~/.config/planetscale/access-token)" --instance "org/db/branch" 
+sql-proxy-client --token "$(cat ~/.config/planetscale/access-token)" --org "org" --database "db" --branch "branch" 
 ```
 This will run the `sql-proxy-client` on your localhost and bind to the address
 `127.0.0.1:3307`. You should use this address to connect your application. As
@@ -43,26 +43,33 @@ an example, here is how you can connect with the `mysql` CLI:
 mysql -u root -h 127.0.0.1 -P 3307
 ```
 
-## Development
+### Connecting with a Service token
 
-### Releasing a new version
-
-To release a new version of the `sql-proxy` make sure to switch to an updated `main` branch:
+To connect with a service token and service token name, use the following flags:
 
 ```
-git checkout main
-git pull origin main
+sql-proxy-client --service-token "<your_service_token>" --service-token-name "<your_service_token_name>" --org "org" --database "db" --branch "branch" 
+```
+## Using the Docker container
+
+We also provide ready to use containers. To pull the latest docker image:
+
+```
+docker pull planetscale/pscale-proxy:latest
 ```
 
-after that create a new tag and push to the repo. Make sure the version is bumped:
+Here is an example to run the container and publish the proxy on host address
+`127.0.0.1:3306:`
 
 ```
-git tag -a <version> -m <comment>
-git push origin <version>
+$ docker run -p 127.0.0.1:3306:3306 planetscale/pscale-proxy \
+  --host 0.0.0.0 \
+  --org "$PLANETSCALE_ORG" \
+  --database "$PLANETSCALE_DATABASE" \
+  --branch "$PLANETSCALE_BRANCH" \
+  --service-token "$PLANETSCALE_SERVICE_TOKEN" \
+  --service-token-name "$PLANETSCALE_SERVICE_TOKEN_NAME" 
 ```
-
-This will trigger the CI and invoke `goreleaser`, which will then release all the appropriate packages and archives.
-
 
 ## Credits
 
