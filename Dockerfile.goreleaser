@@ -1,0 +1,6 @@
+FROM alpine:latest  
+RUN apk --no-cache add ca-certificates
+EXPOSE 3306
+
+COPY pscale-proxy /usr/bin
+ENTRYPOINT ["/usr/bin/pscale-proxy"] 

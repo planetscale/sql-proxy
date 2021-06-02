@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strings"
 	"syscall"
@@ -34,14 +35,23 @@ func main() {
 }
 
 func realMain() error {
-	localAddr := flag.String("local-addr", "127.0.0.1:3307",
-		"Local address to bind and listen for connections")
-	remoteAddr := flag.String("remote-addr", "",
-		"MySQL remote network address")
+	host := flag.String("host", "127.0.0.1", "Local host to bind and listen for connections")
+	port := flag.String("port", "3306", "Local port to bind and listen for connections")
+
+	remoteAddr := flag.String("remote-addr", "", "MySQL remote network address")
 	remotePort := flag.Int("remote-port", 3307, "MySQL remote port")
-	instance := flag.String("instance", "",
-		"The PlanetScale Database instance in the form of organization/database/branch")
-	token := flag.String("token", "", "The PlanetScale API token")
+
+	orgName := flag.String("org", os.Getenv("PLANETSCALE_ORG"),
+		"The PlanetScale Organization")
+	dbName := flag.String("database", os.Getenv("PLANETSCALE_DATABASE"),
+		"The PlanetScale Database")
+	branchName := flag.String("branch", os.Getenv("PLANETSCALE_BRANCH"),
+		"The PlanetScale Branch")
+
+	token := flag.String("token", os.Getenv("PLANETSCALE_ACCESS_TOKEN"), "The PlanetScale API access token (PLANETSCALE_ACCESS_TOKEN)")
+	serviceToken := flag.String("service-token", os.Getenv("PLANETSCALE_SERVICE_TOKEN"), "The PlanetScale API service token (PLANETSCALE_SERVICE_TOKEN)")
+	serviceTokenName := flag.String("service-token-name", os.Getenv("PLANETSCALE_SERVICE_TOKEN_NAME"), "The PlanetScale API service token name (PLANETSCALE_SERVICE_TOKEN_NAME)")
+
 	showVersion := flag.Bool("version", false, "Show version of the proxy")
 
 	caPath := flag.String("ca", "", "MySQL CA Cert path")
@@ -55,18 +65,18 @@ func realMain() error {
 		return nil
 	}
 
-	if *token == "" {
-		return errors.New("--token is not set. Please provide a PlanetScale API token")
+	if *token != "" && *serviceToken != "" && *serviceTokenName != "" {
+		return errors.New("--token and --service-token/--service-token-name cannot be set at the same time")
 	}
 
-	if *instance == "" {
-		return errors.New("--instance is not set. Please provide the PlanetScale DB instance in the form of organization/database/branch")
+	if *orgName == "" || *dbName == "" || *branchName == "" {
+		return errors.New("--org, --database or --branch is not set")
 	}
 
 	var certSource proxy.CertSource
 	var err error
 
-	certSource, err = newRemoteCertSource(*token)
+	certSource, err = newRemoteCertSource(*token, *serviceToken, *serviceTokenName)
 	if err != nil {
 		return err
 	}
@@ -80,9 +90,9 @@ func realMain() error {
 
 	p, err := proxy.NewClient(proxy.Options{
 		CertSource: certSource,
-		LocalAddr:  *localAddr,
+		LocalAddr:  net.JoinHostPort(*host, *port),
 		RemoteAddr: *remoteAddr,
-		Instance:   *instance,
+		Instance:   fmt.Sprintf("%s/%s/%s", *orgName, *dbName, *branchName),
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't create proxy client: %s", err)
@@ -99,10 +109,15 @@ type remoteCertSource struct {
 	client *ps.Client
 }
 
-func newRemoteCertSource(token string) (*remoteCertSource, error) {
-	client, err := ps.NewClient(
-		ps.WithAccessToken(token),
-	)
+func newRemoteCertSource(token, serviceToken, serviceTokenName string) (*remoteCertSource, error) {
+	var opts []ps.ClientOption
+	if token != "" {
+		opts = append(opts, ps.WithAccessToken(token))
+	} else {
+		opts = append(opts, ps.WithServiceToken(serviceTokenName, serviceToken))
+	}
+
+	client, err := ps.NewClient(opts...)
 	if err != nil {
 		return nil, err
 	}
