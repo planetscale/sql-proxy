@@ -31,10 +31,8 @@ func TestClient_Run_Cancellation(t *testing.T) {
 
 	done := make(chan bool)
 	go func() {
-		err := client.Run(ctx)
-		c.Assert(err, qt.IsNil)
+		client.Run(ctx)
 		close(done)
-
 	}()
 
 	cancel()
