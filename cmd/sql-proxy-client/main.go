@@ -13,12 +13,11 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
-	"syscall"
 
 	ps "github.com/planetscale/planetscale-go/planetscale"
 	"github.com/planetscale/sql-proxy/proxy"
-	"github.com/planetscale/sql-proxy/sigutil"
 )
 
 var (
@@ -98,9 +97,8 @@ func realMain() error {
 		return fmt.Errorf("couldn't create proxy client: %s", err)
 	}
 
-	// TODO(fatih): replace with signal.NotifyContext once Go 1.16 is released
-	// https://go-review.googlesource.com/c/go/+/219640
-	ctx := sigutil.WithSignal(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer cancel()
 
 	return p.Run(ctx)
 }
