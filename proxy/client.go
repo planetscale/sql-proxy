@@ -20,6 +20,11 @@ const (
 	keepAlivePeriod = time.Minute
 )
 
+// CertError represents a Cert operation error.
+type CertError struct{ msg string }
+
+func (c *CertError) Error() string { return c.msg }
+
 // Cert represents the client certificate key pair in the root certiciate
 // authority that the client uses to verify server certificates.
 
@@ -119,12 +124,6 @@ func NewClient(opts Options) (*Client, error) {
 		c.log = logger
 	}
 
-	// cache the certs for the given instance(s)
-	_, _, err := c.clientCerts(context.Background(), opts.Instance)
-	if err != nil {
-		c.log.Error("couldn't retrieve TLS certificate for the client", zap.Error(err))
-	}
-
 	return c, nil
 }
 
@@ -137,6 +136,13 @@ type Conn struct {
 // Run runs the proxy. It listens to the configured localhost address and
 // proxies the connection over a TLS tunnel to the remote DB instance.
 func (c *Client) Run(ctx context.Context) error {
+	// cache the certs for the given instance. This will also validate the
+	// input and ensure to exit early.
+	_, _, err := c.clientCerts(context.Background(), c.instance)
+	if err != nil {
+		return &CertError{msg: err.Error()}
+	}
+
 	c.log.Info("ready for new connections")
 	l, err := c.getListener()
 	if err != nil {
