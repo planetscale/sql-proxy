@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -126,7 +127,7 @@ func newRemoteCertSource(token, serviceToken, serviceTokenName string) (*remoteC
 }
 
 func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
-	pkey, err := rsa.GenerateKey(rand.Reader, 2048)
+	pkey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't generate private key: %s", err)
 	}
