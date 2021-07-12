@@ -14,7 +14,7 @@ func TestTLSCache_Retrieve(t *testing.T) {
 	cache := newtlsCache()
 
 	instance := "foo"
-	cfg := &tls.Config{ServerName: "server"}
+	cfg := &tls.Config{ServerName: "server", MinVersion: tls.VersionTLS12}
 	remoteAddr := "foo.example.com:3306"
 
 	cache.Add(instance, cfg, remoteAddr)
@@ -45,7 +45,7 @@ func TestTLSCache_Expired(t *testing.T) {
 	}
 
 	instance := "foo"
-	cfg := &tls.Config{ServerName: "server"}
+	cfg := &tls.Config{ServerName: "server", MinVersion: tls.VersionTLS12}
 	remoteAddr := "foo.example.com:3306"
 
 	cache.Add(instance, cfg, remoteAddr)

@@ -101,7 +101,7 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 	client, err := NewClient(testOpts)
 	c.Assert(err, qt.IsNil)
 
-	cfg := &tls.Config{ServerName: "server"}
+	cfg := &tls.Config{ServerName: "server", MinVersion: tls.VersionTLS12}
 	remoteAddr := "foo.example.com"
 	client.configCache.Add(instance, cfg, remoteAddr)
 
