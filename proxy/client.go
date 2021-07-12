@@ -349,6 +349,7 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 	cfg := &tls.Config{
 		ServerName:   serverName,
 		Certificates: []tls.Certificate{cert.ClientCert},
+		MinVersion:   tls.VersionTLS12,
 		RootCAs:      rootCertPool,
 		// Set InsecureSkipVerify to skip the default validation we are
 		// replacing. This will not disable VerifyConnection.
