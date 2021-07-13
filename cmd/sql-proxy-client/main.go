@@ -144,7 +144,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 
 	return &proxy.Cert{
 		ClientCert: cert.ClientCert,
-		CACert:     cert.CACert,
+		CACerts:    cert.CACerts,
 		RemoteAddr: cert.RemoteAddr,
 		Ports: proxy.RemotePorts{
 			MySQL: cert.Ports.MySQL,
@@ -159,7 +159,7 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort
 		return nil, err
 	}
 
-	caCert, err := parseCert(pem)
+	caCerts, err := parseCaCerts(pem)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +168,10 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort
 	if err != nil {
 		return nil, err
 	}
-	cert.Leaf = caCert
 
 	return &localCertSource{
 		cert:       cert,
-		caCert:     caCert,
+		caCerts:    caCerts,
 		remoteAddr: remoteAddr,
 		remotePort: remotePort,
 	}, nil
@@ -181,7 +180,7 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort
 
 type localCertSource struct {
 	cert       tls.Certificate
-	caCert     *x509.Certificate
+	caCerts    []*x509.Certificate
 	remoteAddr string
 	remotePort int
 }
@@ -189,7 +188,7 @@ type localCertSource struct {
 func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
 	return &proxy.Cert{
 		ClientCert: c.cert,
-		CACert:     c.caCert,
+		CACerts:    c.caCerts,
 		RemoteAddr: c.remoteAddr,
 		Ports: proxy.RemotePorts{
 			Proxy: c.remotePort,
@@ -197,12 +196,23 @@ func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*pr
 	}, nil
 }
 
-func parseCert(pemCert []byte) (*x509.Certificate, error) {
-	bl, _ := pem.Decode(pemCert)
-	if bl == nil {
-		return nil, errors.New("invalid PEM: " + string(pemCert))
+func parseCaCerts(pemCert []byte) ([]*x509.Certificate, error) {
+	var certs []*x509.Certificate
+
+	for {
+		var certBlock *pem.Block
+		certBlock, pemCert = pem.Decode(pemCert)
+		if certBlock == nil {
+			break
+		}
+		cert, err := x509.ParseCertificate(certBlock.Bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		certs = append(certs, cert)
 	}
-	return x509.ParseCertificate(bl.Bytes)
+	return certs, nil
 }
 
 // printVersion formats a version string with the given information.

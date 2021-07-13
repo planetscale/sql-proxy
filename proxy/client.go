@@ -30,7 +30,7 @@ func (c *CertError) Error() string { return c.msg }
 
 type Cert struct {
 	ClientCert tls.Certificate
-	CACert     *x509.Certificate
+	CACerts    []*x509.Certificate
 	RemoteAddr string
 	Ports      RemotePorts
 }
@@ -341,7 +341,9 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 	}
 
 	rootCertPool := x509.NewCertPool()
-	rootCertPool.AddCert(cert.CACert)
+	for _, caCert := range cert.CACerts {
+		rootCertPool.AddCert(caCert)
+	}
 
 	serverName := fmt.Sprintf("%s.%s.%s.%s", s[2], s[1], s[0], cert.RemoteAddr)
 	fullAddr := fmt.Sprintf("%s:%d", serverName, cert.Ports.Proxy)

@@ -59,7 +59,7 @@ func TestClient_clientCerts(t *testing.T) {
 			c.Check(b, qt.Equals, branch)
 			return &Cert{
 				ClientCert: clientCert,
-				CACert:     caCert,
+				CACerts:    []*x509.Certificate{caCert},
 				RemoteAddr: remoteAddr,
 				Ports: RemotePorts{
 					Proxy: 3306,
@@ -125,7 +125,7 @@ func TestClient_run(t *testing.T) {
 		CertFn: func(ctx context.Context, o, d, b string) (*Cert, error) {
 			return &Cert{
 				ClientCert: certs.clientCert,
-				CACert:     certs.caCert,
+				CACerts:    certs.caCerts,
 			}, nil
 		},
 	}
@@ -198,7 +198,7 @@ func TestClient_SyncAtomicAlignment(t *testing.T) {
 type testCert struct {
 	serverCfg  *tls.Config
 	clientCert tls.Certificate
-	caCert     *x509.Certificate
+	caCerts    []*x509.Certificate
 }
 
 func testCerts(t testing.TB) testCert {
@@ -236,7 +236,7 @@ func testCerts(t testing.TB) testCert {
 	return testCert{
 		serverCfg:  serverCfg,
 		clientCert: clientCerts,
-		caCert:     caCert,
+		caCerts:    []*x509.Certificate{caCert},
 	}
 }
 
