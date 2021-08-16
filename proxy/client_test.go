@@ -3,21 +3,12 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 	"testing"
 	"unsafe"
 
 	qt "github.com/frankban/quicktest"
 	"go.uber.org/zap/zaptest"
-)
-
-const (
-	textFixtures = "./testcerts"
 )
 
 func TestClient_Run_Cancellation(t *testing.T) {
@@ -114,46 +105,6 @@ func TestClient_SyncAtomicAlignment(t *testing.T) {
 	c.Assert(int(offset%64), qt.Equals, 0, qt.Commentf("Client.connectionsCounter is not aligned"))
 }
 
-type testCert struct {
-	serverCfg  *tls.Config
-	clientCert tls.Certificate
-}
-
-func testCerts(t testing.TB) testCert {
-	c := qt.New(t)
-	c.Helper()
-
-	caBuf, err := ioutil.ReadFile(filepath.Join(textFixtures, "ca.crt"))
-	c.Assert(err, qt.IsNil)
-
-	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caBuf)
-
-	serverCerts, err := tls.LoadX509KeyPair(
-		filepath.Join(textFixtures, "server.crt"),
-		filepath.Join(textFixtures, "server.key"),
-	)
-	c.Assert(err, qt.IsNil)
-
-	clientCerts, err := tls.LoadX509KeyPair(
-		filepath.Join(textFixtures, "client.crt"),
-		filepath.Join(textFixtures, "client.key"),
-	)
-	c.Assert(err, qt.IsNil)
-
-	serverCfg := &tls.Config{
-		PreferServerCipherSuites: true,
-		MinVersion:               tls.VersionTLS12,
-		ClientCAs:                caPool,
-		Certificates:             []tls.Certificate{serverCerts},
-	}
-
-	return testCert{
-		serverCfg:  serverCfg,
-		clientCert: clientCerts,
-	}
-}
-
 func testOptions(t *testing.T) Options {
 	return Options{
 		Logger: zaptest.NewLogger(t),
@@ -170,12 +121,4 @@ func (f *fakeCertSource) Cert(ctx context.Context, org, db, branch string) (*Cer
 
 	return f.CertFn(ctx, org, db, branch)
 
-}
-
-func parseCert(pemCert []byte) (*x509.Certificate, error) {
-	bl, _ := pem.Decode(pemCert)
-	if bl == nil {
-		return nil, errors.New("invalid PEM: " + string(pemCert))
-	}
-	return x509.ParseCertificate(bl.Bytes)
 }
