@@ -8,14 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"path/filepath"
 	"testing"
 	"unsafe"
 
 	qt "github.com/frankban/quicktest"
 	"go.uber.org/zap/zaptest"
-	"golang.org/x/net/nettest"
 )
 
 const (
@@ -44,11 +42,8 @@ func TestClient_clientCerts(t *testing.T) {
 	ctx := context.Background()
 
 	clientCert := tls.Certificate{}
-	caCert := &x509.Certificate{
-		RawSubject: []byte("a-subject"),
-	}
-	remoteAddr := "foo.example.com"
-	wantRemoteAddr := "mybranch.mydb.myorg.foo.example.com:3306"
+	remoteAddr := "branchid.turtle.example.com"
+	wantRemoteAddr := "branchid.turtle.example.com:3306"
 	org, db, branch := "myorg", "mydb", "mybranch"
 	instance := fmt.Sprintf("%s/%s/%s", org, db, branch)
 
@@ -59,8 +54,7 @@ func TestClient_clientCerts(t *testing.T) {
 			c.Check(b, qt.Equals, branch)
 			return &Cert{
 				ClientCert: clientCert,
-				CACerts:    []*x509.Certificate{caCert},
-				RemoteAddr: remoteAddr,
+				AccessHost: remoteAddr,
 				Ports: RemotePorts{
 					Proxy: 3306,
 				},
@@ -79,9 +73,6 @@ func TestClient_clientCerts(t *testing.T) {
 	c.Assert(cert.Certificates, qt.HasLen, 1)
 	c.Assert(cert.Certificates[0], qt.DeepEquals, clientCert)
 	c.Assert(addr, qt.Equals, wantRemoteAddr)
-
-	c.Assert(cert.RootCAs.Subjects(), qt.HasLen, 1)
-	c.Assert(cert.RootCAs.Subjects()[0], qt.DeepEquals, caCert.RawSubject)
 }
 
 func TestClient_clientCerts_has_cache(t *testing.T) {
@@ -112,78 +103,6 @@ func TestClient_clientCerts_has_cache(t *testing.T) {
 	c.Assert(addr, qt.Equals, remoteAddr)
 }
 
-func TestClient_run(t *testing.T) {
-	c := qt.New(t)
-	ctx := context.Background()
-
-	org, db, branch := "myorg", "mydb", "mybranch"
-	instance := fmt.Sprintf("%s/%s/%s", org, db, branch)
-
-	certs := testCerts(c)
-
-	certSource := &fakeCertSource{
-		CertFn: func(ctx context.Context, o, d, b string) (*Cert, error) {
-			return &Cert{
-				ClientCert: certs.clientCert,
-				CACerts:    certs.caCerts,
-			}, nil
-		},
-	}
-
-	localListener, err := nettest.NewLocalListener("tcp")
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { localListener.Close() })
-
-	remoteListener, err := nettest.NewLocalListener("tcp")
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { remoteListener.Close() })
-
-	testOpts := testOptions(t)
-	testOpts.Instance = instance
-	testOpts.RemoteAddr = remoteListener.Addr().String()
-	testOpts.CertSource = certSource
-	client, err := NewClient(testOpts)
-	c.Assert(err, qt.IsNil)
-
-	// run the client proxy
-	done := make(chan bool)
-	go func() {
-		err := client.run(ctx, localListener)
-		c.Assert(err, qt.IsNil)
-	}()
-
-	msg := "Don't Try To Understand It. Feel It."
-
-	// run the remote, server proxy
-	go func() {
-		conn, err := remoteListener.Accept()
-		c.Assert(err, qt.IsNil)
-		tlsConn := tls.Server(conn, certs.serverCfg)
-
-		// read from the proxy
-		buf := make([]byte, len(msg))
-		_, err = tlsConn.Read(buf[:])
-		c.Assert(err, qt.IsNil)
-
-		// we should read the same message the client sent us
-		c.Assert(string(buf), qt.Equals, msg)
-
-		// bail out
-		close(done)
-	}()
-
-	// open a TCP connection to our proxy
-	conn, err := net.Dial(localListener.Addr().Network(), localListener.Addr().String())
-	c.Assert(err, qt.IsNil)
-
-	// and send the message
-	_, err = conn.Write([]byte(msg))
-	c.Assert(err, qt.IsNil)
-
-	// wait until we have read the message on the remote listener
-	<-done
-}
-
 func TestClient_SyncAtomicAlignment(t *testing.T) {
 	c := qt.New(t)
 
@@ -198,7 +117,6 @@ func TestClient_SyncAtomicAlignment(t *testing.T) {
 type testCert struct {
 	serverCfg  *tls.Config
 	clientCert tls.Certificate
-	caCerts    []*x509.Certificate
 }
 
 func testCerts(t testing.TB) testCert {
@@ -206,9 +124,6 @@ func testCerts(t testing.TB) testCert {
 	c.Helper()
 
 	caBuf, err := ioutil.ReadFile(filepath.Join(textFixtures, "ca.crt"))
-	c.Assert(err, qt.IsNil)
-
-	caCert, err := parseCert(caBuf)
 	c.Assert(err, qt.IsNil)
 
 	caPool := x509.NewCertPool()
@@ -236,7 +151,6 @@ func testCerts(t testing.TB) testCert {
 	return testCert{
 		serverCfg:  serverCfg,
 		clientCert: clientCerts,
-		caCerts:    []*x509.Certificate{caCert},
 	}
 }
 
