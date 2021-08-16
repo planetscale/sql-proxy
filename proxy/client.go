@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +29,7 @@ func (c *CertError) Error() string { return c.msg }
 
 type Cert struct {
 	ClientCert tls.Certificate
-	CACerts    []*x509.Certificate
-	RemoteAddr string
+	AccessHost string
 	Ports      RemotePorts
 }
 
@@ -76,8 +74,8 @@ type Client struct {
 // Options are the options for creating a new Client.
 type Options struct {
 	// RemoteAddr defines the server address to tunnel local connections. By
-	// default we connect to the remote address given by the CertSource. This
-	// option can be used to over write it.
+	// default, we connect to the remote address given by the CertSource. This
+	// option can be used to overwrite it.
 	RemoteAddr string
 
 	// LocalAddr defines the address to listen for new connection
@@ -91,8 +89,7 @@ type Options struct {
 	MaxConnections uint64
 
 	// CertSource defines the certificate source to obtain the required TLS
-	// certificates for the client and the remote address of the server to
-	// connect.
+	// certificates for the client.
 	CertSource CertSource
 
 	// Logger defines which zap.Logger to use. Use it to override the default
@@ -270,7 +267,7 @@ func (c *Client) handleConn(ctx context.Context, conn net.Conn, instance string)
 	}
 
 	// TODO(fatih): implement refreshing certs
-	// go p.refreshCertAfter(instance, timeToRefresh)
+	// go p.refreshCeartAfter(instance, timeToRefresh)
 
 	// overwrite the remote address if the user explicitly set it
 	if c.remoteAddr != "" {
@@ -340,41 +337,12 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 		return nil, "", fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
 	}
 
-	rootCertPool := x509.NewCertPool()
-	for _, caCert := range cert.CACerts {
-		rootCertPool.AddCert(caCert)
-	}
-
-	serverName := fmt.Sprintf("%s.%s.%s.%s", s[2], s[1], s[0], cert.RemoteAddr)
-	fullAddr := fmt.Sprintf("%s:%d", serverName, cert.Ports.Proxy)
+	fullAddr := fmt.Sprintf("%s:%d", cert.AccessHost, cert.Ports.Proxy)
 
 	cfg := &tls.Config{
-		ServerName:   serverName,
+		ServerName:   cert.AccessHost,
 		Certificates: []tls.Certificate{cert.ClientCert},
 		MinVersion:   tls.VersionTLS12,
-		RootCAs:      rootCertPool,
-		// Set InsecureSkipVerify to skip the default validation we are
-		// replacing. This will not disable VerifyConnection.
-		InsecureSkipVerify: true,
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			// For now, only verify the server's certificate chain.
-			// We don't know yet what the server's FQDN will be.
-			//
-			// 			serverName := cs.ServerName
-			// 			commonName := cs.PeerCertificates[0].Subject.CommonName
-			// 			if commonName != serverName {
-			// 				return fmt.Errorf("invalid certificate name %q, expected %q", commonName, serverName)
-			// 			}
-			opts := x509.VerifyOptions{
-				Roots:         rootCertPool,
-				Intermediates: x509.NewCertPool(),
-			}
-			for _, cert := range cs.PeerCertificates[1:] {
-				opts.Intermediates.AddCert(cert)
-			}
-			_, err := cs.PeerCertificates[0].Verify(opts)
-			return err
-		},
 	}
 
 	c.log.Info("adding tls.Config to the cache", zap.String("instance", instance))

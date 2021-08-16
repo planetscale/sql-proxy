@@ -144,8 +144,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 
 	return &proxy.Cert{
 		ClientCert: cert.ClientCert,
-		CACerts:    cert.CACerts,
-		RemoteAddr: cert.RemoteAddr,
+		AccessHost: cert.AccessHost,
 		Ports: proxy.RemotePorts{
 			MySQL: cert.Ports.MySQL,
 			Proxy: cert.Ports.Proxy,
@@ -188,8 +187,7 @@ type localCertSource struct {
 func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*proxy.Cert, error) {
 	return &proxy.Cert{
 		ClientCert: c.cert,
-		CACerts:    c.caCerts,
-		RemoteAddr: c.remoteAddr,
+		AccessHost: c.remoteAddr,
 		Ports: proxy.RemotePorts{
 			Proxy: c.remotePort,
 		},
