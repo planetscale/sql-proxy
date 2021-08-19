@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -68,8 +69,14 @@ func realMain() error {
 
 	var certSource proxy.CertSource
 	var err error
+	var instance string
 
 	if *token != "" || (*serviceToken != "" && *serviceTokenName != "") {
+		if *orgName == "" || *dbName == "" || *branchName == "" {
+			return errors.New("--org, --database or --branch is not set with a token")
+		}
+		instance = fmt.Sprintf("%s/%s/%s", *orgName, *dbName, *branchName)
+
 		certSource, err = newRemoteCertSource(*token, *serviceToken, *serviceTokenName)
 		if err != nil {
 			return err
@@ -77,21 +84,27 @@ func realMain() error {
 	}
 
 	if *remoteHost != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		certSource, err = newLocalCertSource(*clientCertPath, *clientKeyPath, *remoteHost, *remotePort)
+		localCertSource, err := newLocalCertSource(*clientCertPath, *clientKeyPath, *remoteHost, *remotePort)
 		if err != nil {
 			return err
 		}
+		certSource = localCertSource
+		cert, err := x509.ParseCertificate(localCertSource.cert.Certificate[0])
+		if err != nil {
+			return err
+		}
+		instance = cert.Subject.String()
 	}
 
 	if certSource == nil {
-		return fmt.Errorf("no configuration found, need either a token and org / datbase / branch parameters or separate specified certificate source and remote host")
+		return errors.New("no configuration found, need either a token and org / datbase / branch parameters or separate specified certificate source and remote host")
 	}
 
 	p, err := proxy.NewClient(proxy.Options{
 		CertSource: certSource,
 		LocalAddr:  net.JoinHostPort(*host, *port),
 		RemoteAddr: net.JoinHostPort(*remoteHost, strconv.Itoa(*remotePort)),
-		Instance:   fmt.Sprintf("%s/%s/%s", *orgName, *dbName, *branchName),
+		Instance:   instance,
 	})
 	if err != nil {
 		return fmt.Errorf("couldn't create proxy client: %s", err)
