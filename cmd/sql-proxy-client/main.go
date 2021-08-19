@@ -6,15 +6,13 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 
 	ps "github.com/planetscale/planetscale-go/planetscale"
@@ -38,7 +36,7 @@ func realMain() error {
 	host := flag.String("host", "127.0.0.1", "Local host to bind and listen for connections")
 	port := flag.String("port", "3306", "Local port to bind and listen for connections")
 
-	remoteAddr := flag.String("remote-addr", "", "MySQL remote network address")
+	remoteHost := flag.String("remote-host", "", "MySQL remote host")
 	remotePort := flag.Int("remote-port", 3307, "MySQL remote port")
 
 	orgName := flag.String("org", os.Getenv("PLANETSCALE_ORG"),
@@ -54,7 +52,6 @@ func realMain() error {
 
 	showVersion := flag.Bool("version", false, "Show version of the proxy")
 
-	caPath := flag.String("ca", "", "MySQL CA Cert path")
 	clientCertPath := flag.String("cert", "", "MySQL Client Cert path")
 	clientKeyPath := flag.String("key", "", "MySQL Client Key path")
 
@@ -69,29 +66,31 @@ func realMain() error {
 		return errors.New("--token and --service-token/--service-token-name cannot be set at the same time")
 	}
 
-	if *orgName == "" || *dbName == "" || *branchName == "" {
-		return errors.New("--org, --database or --branch is not set")
-	}
-
 	var certSource proxy.CertSource
 	var err error
 
-	certSource, err = newRemoteCertSource(*token, *serviceToken, *serviceTokenName)
-	if err != nil {
-		return err
-	}
-
-	if *caPath != "" && *clientCertPath != "" && *clientKeyPath != "" {
-		certSource, err = newLocalCertSource(*caPath, *clientCertPath, *clientKeyPath, *remoteAddr, *remotePort)
+	if *token != "" || (*serviceToken != "" && *serviceTokenName != "") {
+		certSource, err = newRemoteCertSource(*token, *serviceToken, *serviceTokenName)
 		if err != nil {
 			return err
 		}
 	}
 
+	if *remoteHost != "" && *clientCertPath != "" && *clientKeyPath != "" {
+		certSource, err = newLocalCertSource(*clientCertPath, *clientKeyPath, *remoteHost, *remotePort)
+		if err != nil {
+			return err
+		}
+	}
+
+	if certSource == nil {
+		return fmt.Errorf("no configuration found, need either a token and org / datbase / branch parameters or separate specified certificate source and remote host")
+	}
+
 	p, err := proxy.NewClient(proxy.Options{
 		CertSource: certSource,
 		LocalAddr:  net.JoinHostPort(*host, *port),
-		RemoteAddr: *remoteAddr,
+		RemoteAddr: net.JoinHostPort(*remoteHost, strconv.Itoa(*remotePort)),
 		Instance:   fmt.Sprintf("%s/%s/%s", *orgName, *dbName, *branchName),
 	})
 	if err != nil {
@@ -152,17 +151,7 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 	}, nil
 }
 
-func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort int) (*localCertSource, error) {
-	pem, err := ioutil.ReadFile(caPath)
-	if err != nil {
-		return nil, err
-	}
-
-	caCerts, err := parseCaCerts(pem)
-	if err != nil {
-		return nil, err
-	}
-
+func newLocalCertSource(certPath, keyPath, remoteAddr string, remotePort int) (*localCertSource, error) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, err
@@ -170,7 +159,6 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort
 
 	return &localCertSource{
 		cert:       cert,
-		caCerts:    caCerts,
 		remoteAddr: remoteAddr,
 		remotePort: remotePort,
 	}, nil
@@ -179,7 +167,6 @@ func newLocalCertSource(caPath, certPath, keyPath, remoteAddr string, remotePort
 
 type localCertSource struct {
 	cert       tls.Certificate
-	caCerts    []*x509.Certificate
 	remoteAddr string
 	remotePort int
 }
@@ -192,25 +179,6 @@ func (c *localCertSource) Cert(ctx context.Context, org, db, branch string) (*pr
 			Proxy: c.remotePort,
 		},
 	}, nil
-}
-
-func parseCaCerts(pemCert []byte) ([]*x509.Certificate, error) {
-	var certs []*x509.Certificate
-
-	for {
-		var certBlock *pem.Block
-		certBlock, pemCert = pem.Decode(pemCert)
-		if certBlock == nil {
-			break
-		}
-		cert, err := x509.ParseCertificate(certBlock.Bytes)
-		if err != nil {
-			return nil, err
-		}
-
-		certs = append(certs, cert)
-	}
-	return certs, nil
 }
 
 // printVersion formats a version string with the given information.
