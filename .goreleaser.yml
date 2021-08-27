@@ -55,6 +55,8 @@ archives:
         format: zip
 snapshot:
   name_template: "{{ .Tag }}-next"
+checksum:
+  name_template: 'checksums.txt'
 changelog:
   sort: asc
   filters:
