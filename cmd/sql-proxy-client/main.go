@@ -15,8 +15,12 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"time"
+
+	nanoid "github.com/matoous/go-nanoid/v2"
 
 	ps "github.com/planetscale/planetscale-go/planetscale"
+
 	"github.com/planetscale/sql-proxy/proxy"
 )
 
@@ -25,6 +29,9 @@ var (
 	commit  string
 	date    string
 )
+
+const PublicIdAlphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+const PublicIdLength = 6
 
 func main() {
 	if err := realMain(); err != nil {
@@ -144,22 +151,30 @@ func (r *remoteCertSource) Cert(ctx context.Context, org, db, branch string) (*p
 		return nil, fmt.Errorf("couldn't generate private key: %s", err)
 	}
 
-	cert, err := r.client.Certificates.Create(ctx, &ps.CreateCertificateRequest{
+	request := &ps.DatabaseBranchCertificateRequest{
 		Organization: org,
-		DatabaseName: db,
+		Database:     db,
 		Branch:       branch,
+		DisplayName:  fmt.Sprintf("sql-proxy-%s-%s", time.Now().Format("2006-01-02"), nanoid.MustGenerate(PublicIdAlphabet, PublicIdLength)),
 		PrivateKey:   pkey,
-	})
+	}
+
+	cert, err := r.client.Certificates.Create(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	keyPair, err := cert.X509KeyPair(request)
 	if err != nil {
 		return nil, err
 	}
 
 	return &proxy.Cert{
-		ClientCert: cert.ClientCert,
-		AccessHost: cert.AccessHost,
+		ClientCert: keyPair,
+		AccessHost: cert.Branch.AccessHostURL,
 		Ports: proxy.RemotePorts{
-			MySQL: cert.Ports.MySQL,
-			Proxy: cert.Ports.Proxy,
+			MySQL: 3306,
+			Proxy: 3307,
 		},
 	}, nil
 }
