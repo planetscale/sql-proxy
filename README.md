@@ -6,6 +6,9 @@ certificates manually. It works by opening unix/tcp sockets on the local
 machine and proxying connections to the associated Database instances when the
 sockets are used.
 
+# NOTE
+This repo has been deprecated in favour of using the normal `pscale` CLI client in a container, and passing it the `connect` command with the `host` flag, which will do the same thing
+
 ## Installation
 
 **homebrew tap** (only on macOS for now):
