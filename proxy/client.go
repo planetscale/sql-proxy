@@ -334,7 +334,7 @@ func (c *Client) clientCerts(ctx context.Context, instance string) (*tls.Config,
 
 	cert, err := c.certSource.Cert(ctx, s[0], s[1], s[2])
 	if err != nil {
-		return nil, "", fmt.Errorf("couldn't retrieve certs from cert source: %s", err)
+		return nil, "", err
 	}
 
 	fullAddr := fmt.Sprintf("%s:%d", cert.AccessHost, cert.Ports.Proxy)
