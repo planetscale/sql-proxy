@@ -1,15 +1,16 @@
 ---
-name: go.uber.org/zap/zapcore
-version: v1.19.0
+name: github.com/matoous/go-nanoid/v2
+version: v2.0.0
 type: go
-summary: Package zapcore defines and implements the low-level interfaces upon which
-  zap is built.
-homepage: https://pkg.go.dev/go.uber.org/zap/zapcore
+summary:
+homepage: https://pkg.go.dev/github.com/matoous/go-nanoid/v2
 license: mit
 licenses:
-- sources: zap@v1.19.0/LICENSE.txt
+- sources: LICENSE
   text: |
-    Copyright (c) 2016-2017 Uber Technologies, Inc.
+    The MIT License (MIT)
+
+    Copyright (c) 2018 Matous Dzivjak <matousdzivjak@gmail.com>
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal
@@ -28,4 +29,6 @@ licenses:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
+- sources: README.md
+  text: The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
 notices: []
