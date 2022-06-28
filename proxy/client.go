@@ -222,7 +222,7 @@ func (c *Client) listen(l net.Listener, connSrc chan<- Conn) error {
 		start := time.Now()
 		conn, err := l.Accept()
 		if err != nil {
-			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 				d := 10*time.Millisecond - time.Since(start)
 				if d > 0 {
 					time.Sleep(d)
