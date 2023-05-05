@@ -6,7 +6,7 @@ require (
 	github.com/frankban/quicktest v1.14.5
 	github.com/google/go-cmp v0.5.9
 	github.com/matoous/go-nanoid/v2 v2.0.0
-	github.com/planetscale/planetscale-go v0.83.0
+	github.com/planetscale/planetscale-go v0.87.0
 	go.uber.org/zap v1.24.0
 )
 
