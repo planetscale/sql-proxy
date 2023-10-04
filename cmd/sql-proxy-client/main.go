@@ -41,7 +41,7 @@ func main() {
 }
 
 func realMain() error {
-	host := flag.String("host", "127.0.0.1", "Local host to bind and listen for connections")
+	host := flag.String("host", os.Getenv("PLANETSCALE_LISTENING_HOST"), "Local host to bind and listen for connections")
 	port := flag.String("port", "3306", "Local port to bind and listen for connections")
 
 	remoteHost := flag.String("remote-host", "", "MySQL remote host")
