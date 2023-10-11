@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/frankban/quicktest v1.14.6
-	github.com/google/go-cmp v0.5.9
+	github.com/google/go-cmp v0.6.0
 	github.com/matoous/go-nanoid/v2 v2.0.0
 	github.com/planetscale/planetscale-go v0.92.0
 	go.uber.org/zap v1.26.0
